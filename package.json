@@ -1,0 +1,33 @@
+{
+  "name": "code-management",
+  "version": "0.1.0",
+  "description": "本地代码管理客户端",
+  "main": "./out/main/index.js",
+  "author": "chenng",
+  "private": true,
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && vue-tsc --noEmit -p tsconfig.web.json"
+  },
+  "dependencies": {
+    "lucide-vue-next": "^0.577.0",
+    "pinia": "^3.0.4",
+    "vue": "^3.5.44"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@vitejs/plugin-vue": "^5.2.4",
+    "autoprefixer": "^10.6.2",
+    "electron": "^39.8.10",
+    "electron-vite": "^3.1.0",
+    "postcss": "^8.5.32",
+    "tailwindcss": "^3.4.19",
+    "typescript": "^5.9.3",
+    "vite": "^6.4.5",
+    "vitest": "^3.2.7",
+    "vue-tsc": "^2.2.12"
+  }
+}
