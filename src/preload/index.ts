@@ -1,5 +1,12 @@
-import { contextBridge, ipcRenderer } from 'electron'
-import { API_METHODS, channelOf, type Api } from '@shared/ipc'
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import {
+  API_METHODS,
+  channelOf,
+  EVENT_REMOTE_PROGRESS,
+  EVENT_REPO_CHANGED,
+  type Api,
+  type ApiEvents
+} from '@shared/ipc'
 
 const api = Object.fromEntries(
   API_METHODS.map((method) => [
@@ -8,4 +15,15 @@ const api = Object.fromEntries(
   ])
 ) as unknown as Api
 
-contextBridge.exposeInMainWorld('api', api)
+function subscribe<T>(channel: string, listener: (payload: T) => void): () => void {
+  const handler = (_event: IpcRendererEvent, payload: T): void => listener(payload)
+  ipcRenderer.on(channel, handler)
+  return () => ipcRenderer.removeListener(channel, handler)
+}
+
+const events: ApiEvents = {
+  onRemoteProgress: (listener) => subscribe(EVENT_REMOTE_PROGRESS, listener),
+  onRepoChanged: (listener) => subscribe(EVENT_REPO_CHANGED, listener)
+}
+
+contextBridge.exposeInMainWorld('api', { ...api, ...events })

@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
+import type { FetchAllItem } from '@shared/repo'
 import type { Config, Project, ScanError, Snapshot } from '@shared/types'
+import { errorMessage } from '@renderer/lib/errors'
 import {
   compareProjects,
   FILTERS,
@@ -12,6 +14,12 @@ import {
 
 const FOCUS_REFRESH_INTERVAL = 30_000
 
+export interface FetchSummary {
+  succeeded: number
+  failed: FetchAllItem[]
+  cancelled: boolean
+}
+
 export const useProjectsStore = defineStore('projects', () => {
   const projects = ref<Project[]>([])
   const config = ref<Config>({ roots: [], manual: [], hidden: [], excluded: [] })
@@ -19,6 +27,11 @@ export const useProjectsStore = defineStore('projects', () => {
   const loaded = ref(false)
   const loading = ref(false)
   const error = ref<string | null>(null)
+
+  const fetching = ref(false)
+  const fetchProgress = ref('')
+  const fetchSummary = ref<FetchSummary | null>(null)
+  let fetchOpId: string | null = null
 
   const query = ref('')
   const filter = ref<FilterKind>('all')
@@ -68,7 +81,7 @@ export const useProjectsStore = defineStore('projects', () => {
       }
       error.value = null
     } catch (e) {
-      error.value = (e as Error).message
+      error.value = errorMessage(e)
     } finally {
       if (id === requestId) {
         loading.value = false
@@ -81,14 +94,44 @@ export const useProjectsStore = defineStore('projects', () => {
     try {
       await action()
     } catch (e) {
-      error.value = (e as Error).message
+      error.value = errorMessage(e)
     }
   }
 
   const refresh = (): Promise<void> => run(() => window.api.refresh())
 
-  function refreshOnFocus(): void {
-    if (!loading.value && Date.now() - lastRefresh > FOCUS_REFRESH_INTERVAL) void refresh()
+  function refreshIfStale(maxAge = FOCUS_REFRESH_INTERVAL): void {
+    if (!loading.value && Date.now() - lastRefresh > maxAge) void refresh()
+  }
+
+  async function fetchAll(): Promise<void> {
+    const opId = `fetch-all-${Date.now()}`
+    fetchOpId = opId
+    fetching.value = true
+    fetchProgress.value = ''
+    fetchSummary.value = null
+    const unsubscribe = window.api.onRemoteProgress((progress) => {
+      if (progress.opId === opId) fetchProgress.value = progress.line
+    })
+    try {
+      const results = await window.api.fetchAll(opId)
+      fetchSummary.value = {
+        succeeded: results.filter((r) => r.ok).length,
+        failed: results.filter((r) => !r.ok && !r.cancelled),
+        cancelled: results.some((r) => r.cancelled)
+      }
+    } catch (e) {
+      error.value = errorMessage(e)
+    } finally {
+      unsubscribe()
+      fetching.value = false
+      fetchOpId = null
+    }
+    await refresh()
+  }
+
+  function cancelFetchAll(): void {
+    if (fetchOpId) void window.api.cancelRemote(fetchOpId)
   }
 
   function find(path: string): Project | undefined {
@@ -102,6 +145,11 @@ export const useProjectsStore = defineStore('projects', () => {
     loaded,
     loading,
     error,
+    fetching,
+    fetchProgress,
+    fetchSummary,
+    fetchAll,
+    cancelFetchAll,
     query,
     filter,
     activeTag,
@@ -110,7 +158,7 @@ export const useProjectsStore = defineStore('projects', () => {
     filterCounts,
     visible,
     refresh,
-    refreshOnFocus,
+    refreshIfStale,
     addRoot: () => run(() => window.api.addRoot()),
     addProject: () => run(() => window.api.addProject()),
     addExcluded: () => run(() => window.api.addExcluded()),

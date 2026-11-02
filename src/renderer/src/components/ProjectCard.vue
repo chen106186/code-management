@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   ArrowDown,
   ArrowUp,
@@ -19,6 +20,11 @@ import { useProjectsStore } from '@renderer/stores/projects'
 
 const props = defineProps<{ project: Project }>()
 const store = useProjectsStore()
+const router = useRouter()
+
+function openRepo(): void {
+  void router.push({ name: 'repo', query: { path: props.project.path } })
+}
 
 const git = computed(() => props.project.git)
 const changes = computed(() => changeCount(git.value))
@@ -83,7 +89,17 @@ function removeTag(tag: string): void {
         <Star :size="15" :class="project.favorite ? 'fill-amber-400 text-amber-400' : ''" />
       </button>
       <div class="min-w-0 flex-1 pt-0.5">
-        <h2 class="truncate text-sm font-semibold" :title="project.name">{{ project.name }}</h2>
+        <h2 class="truncate text-sm font-semibold" :title="project.name">
+          <button
+            v-if="git"
+            class="max-w-full truncate rounded text-left hover:text-teal-700 hover:underline dark:hover:text-teal-400"
+            title="打开仓库"
+            @click="openRepo"
+          >
+            {{ project.name }}
+          </button>
+          <template v-else>{{ project.name }}</template>
+        </h2>
         <p class="truncate text-xs text-zinc-500 dark:text-zinc-400" :title="project.path">
           {{ project.path }}
         </p>
