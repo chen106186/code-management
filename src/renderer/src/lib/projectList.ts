@@ -32,23 +32,31 @@ export function countByCategory(categories: Category[], projects: Project[]): Ma
   return counts
 }
 
-export type FilterKind = 'all' | 'changed' | 'unpushed' | 'favorite' | 'nonGit'
+export type FilterKind = 'all' | 'changed' | 'unpushed' | 'behind' | 'stale' | 'favorite' | 'nonGit'
 export type SortKind = 'activity' | 'name' | 'changes'
 
 export const FILTERS: { kind: FilterKind; label: string }[] = [
   { kind: 'all', label: '全部' },
-  { kind: 'changed', label: '有改动' },
-  { kind: 'unpushed', label: '未推送' },
   { kind: 'favorite', label: '收藏' },
   { kind: 'nonGit', label: '未用 Git' }
 ]
+
+/** 看板统计里的几项，点击后同样按它筛选 */
+export const STAT_FILTERS: { kind: FilterKind; label: string; hint: string }[] = [
+  { kind: 'changed', label: '有改动', hint: '工作区有未提交的改动' },
+  { kind: 'unpushed', label: '未推送', hint: '本地有提交还没推送到上游' },
+  { kind: 'behind', label: '落后远程', hint: '上游有新提交，取决于最近一次 Fetch' },
+  { kind: 'stale', label: '长期不活跃', hint: '超过 90 天没有提交，也没有修改文件' }
+]
+
+export const STALE_MS = 90 * 86_400_000
 
 export function changeCount(git: GitStatus | null): number {
   if (!git) return 0
   return git.staged + git.unstaged + git.untracked + git.conflicted
 }
 
-export function matchesFilter(project: Project, kind: FilterKind): boolean {
+export function matchesFilter(project: Project, kind: FilterKind, now = Date.now()): boolean {
   switch (kind) {
     case 'all':
       return true
@@ -56,6 +64,10 @@ export function matchesFilter(project: Project, kind: FilterKind): boolean {
       return changeCount(project.git) > 0
     case 'unpushed':
       return (project.git?.ahead ?? 0) > 0
+    case 'behind':
+      return (project.git?.behind ?? 0) > 0
+    case 'stale':
+      return !project.missing && project.lastActivity !== null && now - project.lastActivity > STALE_MS
     case 'favorite':
       return project.favorite
     case 'nonGit':
@@ -70,7 +82,7 @@ export interface ListPrefs {
   activeTag: string | null
 }
 
-const FILTER_KINDS: readonly string[] = FILTERS.map((f) => f.kind)
+const FILTER_KINDS: readonly string[] = [...FILTERS, ...STAT_FILTERS].map((f) => f.kind)
 
 /** 已保存的值可能来自旧版本，无效的项退回默认；已隐藏只是临时查看，不恢复 */
 export function parseListPrefs(text: string | null): ListPrefs {

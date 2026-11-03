@@ -10,7 +10,8 @@ import {
   matchesQuery,
   parseListPrefs,
   SCOPE_ALL,
-  SCOPE_HIDDEN
+  SCOPE_HIDDEN,
+  STALE_MS
 } from './projectList'
 
 const git = (overrides: Partial<GitStatus> = {}): GitStatus => ({
@@ -44,9 +45,24 @@ const project = (overrides: Partial<Project> = {}): Project => ({
   ...overrides
 })
 
+describe('看板统计的筛选', () => {
+  it('落后远程看 behind', () => {
+    expect(matchesFilter(project(), 'behind')).toBe(false)
+    expect(matchesFilter(project({ git: git({ behind: 2 }) }), 'behind')).toBe(true)
+  })
+
+  it('长期不活跃：超过 90 天，没有时间或路径不存在的不算', () => {
+    const now = STALE_MS * 2
+    expect(matchesFilter(project({ lastActivity: now - STALE_MS - 1 }), 'stale', now)).toBe(true)
+    expect(matchesFilter(project({ lastActivity: now - STALE_MS }), 'stale', now)).toBe(false)
+    expect(matchesFilter(project({ lastActivity: null }), 'stale', now)).toBe(false)
+    expect(matchesFilter(project({ lastActivity: 0, missing: true }), 'stale', now)).toBe(false)
+  })
+})
+
 describe('parseListPrefs', () => {
   it('读取有效值', () => {
-    const prefs = { filter: 'changed', sort: 'name', scope: 'c1', activeTag: 't' }
+    const prefs = { filter: 'behind', sort: 'name', scope: 'c1', activeTag: 't' }
     expect(parseListPrefs(JSON.stringify(prefs))).toEqual(prefs)
   })
 

@@ -25,6 +25,7 @@ import {
   SCOPE_ALL,
   SCOPE_HIDDEN,
   SCOPE_UNCATEGORIZED,
+  STAT_FILTERS,
   type CategoryScope,
   type FilterKind,
   type SortKind
@@ -126,7 +127,7 @@ export const useProjectsStore = defineStore('projects', () => {
 
   const filterCounts = computed(() =>
     Object.fromEntries(
-      FILTERS.map(({ kind }) => [
+      [...FILTERS, ...STAT_FILTERS].map(({ kind }) => [
         kind,
         scopedProjects.value.filter((p) => matchesFilter(p, kind)).length
       ])

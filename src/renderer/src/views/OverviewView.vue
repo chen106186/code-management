@@ -2,10 +2,8 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
   ArrowUpDown,
-  ArrowUpFromLine,
   CircleAlert,
   CloudDownload,
-  FilePen,
   FolderMinus,
   FolderPlus,
   LayoutGrid,
@@ -16,21 +14,20 @@ import {
   Star,
   X
 } from 'lucide-vue-next'
+import BoardStats from '@renderer/components/BoardStats.vue'
 import CategorySidebar from '@renderer/components/CategorySidebar.vue'
 import HiddenProjects from '@renderer/components/HiddenProjects.vue'
 import MoveSuggestions from '@renderer/components/MoveSuggestions.vue'
 import ProjectCard from '@renderer/components/ProjectCard.vue'
 import SettingsDrawer from '@renderer/components/SettingsDrawer.vue'
-import { FILTERS, SCOPE_HIDDEN, type FilterKind, type SortKind } from '@renderer/lib/projectList'
+import { FILTERS, SCOPE_HIDDEN, type SortKind } from '@renderer/lib/projectList'
 import { useProjectsStore } from '@renderer/stores/projects'
 
 const store = useProjectsStore()
 const settingsOpen = ref(false)
 
-const FILTER_ICONS: Record<FilterKind, typeof Star> = {
+const FILTER_ICONS: Record<string, typeof Star> = {
   all: LayoutGrid,
-  changed: FilePen,
-  unpushed: ArrowUpFromLine,
   favorite: Star,
   nonGit: FolderMinus
 }
@@ -96,6 +93,8 @@ onBeforeUnmount(() => window.removeEventListener('focus', onFocus))
         <button class="btn" @click="store.addProject()"><Plus :size="14" /> 添加项目</button>
         <button class="btn" @click="settingsOpen = true"><Settings :size="14" /> 设置</button>
       </div>
+
+      <BoardStats v-if="store.scope !== SCOPE_HIDDEN && store.projects.length" />
 
       <h2 v-if="store.scope === SCOPE_HIDDEN" class="flex h-7 items-center gap-1.5 font-semibold">
         已隐藏的项目
