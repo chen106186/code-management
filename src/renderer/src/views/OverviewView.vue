@@ -250,13 +250,36 @@ onBeforeUnmount(() => {
         }}
       </p>
 
-      <ul
-        v-else-if="store.viewMode === 'list'"
-        class="divide-y divide-zinc-100 rounded-xl border border-zinc-200 bg-white dark:divide-zinc-700/50 dark:border-zinc-700/70 dark:bg-zinc-800/60"
-        data-testid="project-list"
-      >
-        <ProjectRow v-for="project in store.visible" :key="project.path" :project="project" />
-      </ul>
+      <!-- 窗口太窄时横向滚动，不把各列挤得看不清 -->
+      <div v-else-if="store.viewMode === 'list'" class="min-w-[52rem]">
+        <!-- 外层和页面同色并盖住上边距，滚动的行不会从表头上方或圆角处露出来 -->
+        <div class="sticky -top-4 z-10 -mt-4 bg-zinc-50 pt-4 dark:bg-zinc-900">
+          <div
+            class="project-grid h-8 rounded-t-xl border border-zinc-200 bg-zinc-100 text-xs font-medium text-zinc-500 dark:border-zinc-700/70 dark:bg-zinc-800 dark:text-zinc-400"
+            data-testid="project-list-header"
+          >
+            <span class="text-right">序号</span>
+            <span class="col-span-3" />
+            <span>名称</span>
+            <span>分支</span>
+            <span>状态</span>
+            <span>Git 地址</span>
+            <span>最近提交</span>
+            <span class="text-right">活跃</span>
+          </div>
+        </div>
+        <ul
+          class="divide-y divide-zinc-100 rounded-b-xl border border-t-0 border-zinc-200 bg-white dark:divide-zinc-700/50 dark:border-zinc-700/70 dark:bg-zinc-800/60"
+          data-testid="project-list"
+        >
+          <ProjectRow
+            v-for="(project, index) in store.visible"
+            :key="project.path"
+            :project="project"
+            :index="index + 1"
+          />
+        </ul>
+      </div>
 
       <div
         v-else

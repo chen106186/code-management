@@ -5,6 +5,7 @@ import { ArrowDown, ArrowUp, CircleAlert, CircleCheck, FilePen, Folder, Star } f
 import type { Project } from '@shared/types'
 import BranchSwitcher from '@renderer/components/BranchSwitcher.vue'
 import ProjectActions from '@renderer/components/ProjectActions.vue'
+import RemoteRow from '@renderer/components/RemoteRow.vue'
 import SelectBox from '@renderer/components/SelectBox.vue'
 import TechIcon from '@renderer/components/TechIcon.vue'
 import { startProjectDrag } from '@renderer/lib/projectDrag'
@@ -12,7 +13,7 @@ import { branchLabel, changeCount, formatRelative } from '@renderer/lib/projectL
 import { useRemarkEditor } from '@renderer/lib/useRemarkEditor'
 import { useProjectsStore } from '@renderer/stores/projects'
 
-const props = defineProps<{ project: Project }>()
+const props = defineProps<{ project: Project; index: number }>()
 const store = useProjectsStore()
 const router = useRouter()
 
@@ -21,6 +22,16 @@ const changes = computed(() => changeCount(git.value))
 const displayName = computed(() => props.project.remark ?? props.project.name)
 const problem = computed(() =>
   props.project.missing ? '路径不存在' : props.project.gitError
+)
+/** 一行只放得下一个地址，优先显示 origin，其余的在悬停提示里 */
+const remotes = computed(() => git.value?.remotes ?? [])
+const mainRemote = computed(
+  () => remotes.value.find((remote) => remote.name === 'origin') ?? remotes.value[0]
+)
+const otherRemotes = computed(() =>
+  remotes.value
+    .filter((remote) => remote !== mainRemote.value)
+    .map((remote) => `${remote.name}：${remote.url}`)
 )
 
 const {
@@ -41,7 +52,7 @@ function openRepo(): void {
   <li
     data-testid="project-row"
     :draggable="!editingRemark"
-    class="project-row group/card relative flex h-11 items-center gap-2.5 px-3 text-xs transition-colors"
+    class="project-row project-grid group/card relative h-11 text-xs transition-colors"
     :class="
       store.selected.has(project.path)
         ? 'bg-teal-50 dark:bg-teal-900/20'
@@ -49,6 +60,7 @@ function openRepo(): void {
     "
     @dragstart="startProjectDrag($event, store.dragPaths(project.path))"
   >
+    <span class="text-right tabular-nums text-zinc-400" data-testid="project-index">{{ index }}</span>
     <SelectBox :path="project.path" :label="displayName" />
     <button
       class="shrink-0"
@@ -68,7 +80,7 @@ function openRepo(): void {
       <Folder v-else :size="15" />
     </span>
 
-    <div class="min-w-0 basis-[28%]" :title="project.path">
+    <div class="min-w-0" :title="project.path">
       <input
         v-if="editingRemark"
         ref="remarkInput"
@@ -99,7 +111,7 @@ function openRepo(): void {
 
     <p
       v-if="problem"
-      class="flex min-w-0 flex-1 items-center gap-1.5 text-red-600 dark:text-red-400"
+      class="col-span-4 flex min-w-0 items-center gap-1.5 text-red-600 dark:text-red-400"
       :title="problem"
     >
       <CircleAlert :size="13" class="shrink-0" />
@@ -107,10 +119,10 @@ function openRepo(): void {
     </p>
 
     <template v-else-if="git">
-      <div class="flex w-36 min-w-0 shrink-0 items-center">
+      <div class="flex min-w-0 items-center">
         <BranchSwitcher :project="project" :label="branchLabel(git)" />
       </div>
-      <div class="flex w-28 shrink-0 items-center gap-2 tabular-nums">
+      <div class="flex min-w-0 items-center gap-2 tabular-nums">
         <span v-if="git.ahead" class="flex items-center text-teal-700 dark:text-teal-400" :title="`领先上游 ${git.ahead} 个提交`">
           <ArrowUp :size="12" />{{ git.ahead }}
         </span>
@@ -124,14 +136,31 @@ function openRepo(): void {
           <CircleCheck :size="12" />
         </span>
       </div>
-      <span class="min-w-0 flex-1 truncate text-zinc-500 dark:text-zinc-400" :title="git.lastCommit?.subject">
+      <div v-if="mainRemote" class="flex min-w-0 items-center gap-1">
+        <RemoteRow
+          :project-path="project.path"
+          :remote="mainRemote"
+          :show-name="false"
+          short
+          class="min-w-0 flex-1"
+        />
+        <span
+          v-if="otherRemotes.length"
+          class="shrink-0 rounded bg-zinc-100 px-1 text-[11px] text-zinc-500 dark:bg-zinc-700/60 dark:text-zinc-400"
+          :title="otherRemotes.join('\n')"
+        >
+          +{{ otherRemotes.length }}
+        </span>
+      </div>
+      <span v-else class="truncate text-zinc-400">未配置</span>
+      <span class="min-w-0 truncate text-zinc-500 dark:text-zinc-400" :title="git.lastCommit?.subject">
         {{ git.lastCommit?.subject ?? '尚无提交' }}
       </span>
     </template>
 
-    <span v-else class="min-w-0 flex-1 truncate text-zinc-400">未使用 Git</span>
+    <span v-else class="col-span-4 min-w-0 truncate text-zinc-400">未使用 Git</span>
 
-    <span class="w-20 shrink-0 truncate text-right text-zinc-400">
+    <span class="truncate text-right text-zinc-400">
       {{ project.lastActivity ? formatRelative(project.lastActivity) : '' }}
     </span>
 

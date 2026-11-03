@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { remoteIdentity, remoteWebUrl, sanitizeRemoteUrl } from './remotes'
+import { remoteIdentity, remoteShortUrl, remoteWebUrl, sanitizeRemoteUrl } from './remotes'
+
+describe('remoteShortUrl', () => {
+  it('去掉协议、账号和 .git，保留大小写', () => {
+    expect(remoteShortUrl('https://token@github.com/Owner/Repo.git')).toBe('github.com/Owner/Repo')
+    expect(remoteShortUrl('git@github.com:Owner/Repo.git')).toBe('github.com/Owner/Repo')
+  })
+
+  it('本地路径原样显示', () => {
+    expect(remoteShortUrl('E:\\repos\\a.git')).toBe('E:\\repos\\a.git')
+  })
+})
 
 describe('remoteIdentity', () => {
   it('同一个仓库的不同写法得到同一个值', () => {

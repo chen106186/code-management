@@ -52,6 +52,14 @@
     contain-intrinsic-size: auto 44px;
   }
 
+  /* 表头和每一行共用，保证各列对齐 */
+  .project-grid {
+    @apply grid items-center gap-x-2.5 px-3;
+    grid-template-columns:
+      2rem 1rem 14px 1.25rem minmax(0, 1.2fr) 8rem 5.5rem minmax(0, 2fr) minmax(0, 1.2fr)
+      5rem;
+  }
+
   .commit-row {
     content-visibility: auto;
     contain-intrinsic-size: auto 52px;
