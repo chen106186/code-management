@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted } from 'vue'
-import { CircleAlert, FolderMinus, FolderPlus, RotateCcw, Trash2, X } from 'lucide-vue-next'
+import { CircleAlert, FolderMinus, FolderPlus, Trash2, X } from 'lucide-vue-next'
 import { useProjectsStore } from '@renderer/stores/projects'
 
 const emit = defineEmits<{ close: [] }>()
@@ -100,27 +100,6 @@ function errorOf(path: string): string | undefined {
         </ul>
       </section>
 
-      <section class="space-y-2">
-        <h3 class="font-medium">已隐藏的项目</h3>
-        <ul class="space-y-1">
-          <li
-            v-for="path in store.config.hidden"
-            :key="path"
-            class="flex items-center gap-1 rounded-md bg-zinc-100 py-1 pl-2 pr-1 dark:bg-zinc-700/50"
-          >
-            <span class="min-w-0 flex-1 truncate" :title="path">{{ path }}</span>
-            <button
-              class="icon-btn"
-              title="恢复显示"
-              aria-label="恢复显示"
-              @click="store.restoreProject(path)"
-            >
-              <RotateCcw :size="14" />
-            </button>
-          </li>
-          <li v-if="!store.config.hidden.length" class="text-xs text-zinc-400">没有隐藏的项目</li>
-        </ul>
-      </section>
     </aside>
   </div>
 </template>

@@ -122,6 +122,12 @@ export class ProjectService {
     }))
 
     this.known = new Set([...paths.keys(), ...config.hidden.map(pathKey)])
-    return { projects, config, scanErrors }
+    // 隐藏的项目只列名称，不跑 git，不拖慢刷新
+    const hiddenProjects = config.hidden.map((path) => ({
+      path,
+      name: basename(path) || path,
+      remark: this.store.metaOf(path).remark
+    }))
+    return { projects, hiddenProjects, config, scanErrors }
   }
 }

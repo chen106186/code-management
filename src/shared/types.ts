@@ -65,8 +65,15 @@ export interface ScanError {
   message: string
 }
 
+export interface HiddenProject {
+  path: string
+  name: string
+  remark: string | null
+}
+
 export interface Snapshot {
   projects: Project[]
+  hiddenProjects: HiddenProject[]
   config: Config
   scanErrors: ScanError[]
 }

@@ -17,9 +17,10 @@ import {
   X
 } from 'lucide-vue-next'
 import CategorySidebar from '@renderer/components/CategorySidebar.vue'
+import HiddenProjects from '@renderer/components/HiddenProjects.vue'
 import ProjectCard from '@renderer/components/ProjectCard.vue'
 import SettingsDrawer from '@renderer/components/SettingsDrawer.vue'
-import { FILTERS, type FilterKind, type SortKind } from '@renderer/lib/projectList'
+import { FILTERS, SCOPE_HIDDEN, type FilterKind, type SortKind } from '@renderer/lib/projectList'
 import { useProjectsStore } from '@renderer/stores/projects'
 
 const store = useProjectsStore()
@@ -95,7 +96,11 @@ onBeforeUnmount(() => window.removeEventListener('focus', onFocus))
         <button class="btn" @click="settingsOpen = true"><Settings :size="14" /> 扫描设置</button>
       </div>
 
-      <div class="flex flex-wrap items-center gap-1">
+      <h2 v-if="store.scope === SCOPE_HIDDEN" class="flex h-7 items-center gap-1.5 font-semibold">
+        已隐藏的项目
+        <span class="text-xs font-normal tabular-nums text-zinc-500">{{ store.hiddenProjects.length }}</span>
+      </h2>
+      <div v-else class="flex flex-wrap items-center gap-1">
         <button
           v-for="{ kind, label } in FILTERS"
           :key="kind"
@@ -168,8 +173,10 @@ onBeforeUnmount(() => window.removeEventListener('focus', onFocus))
     </div>
 
     <main class="min-h-0 flex-1 overflow-y-auto p-4">
+      <HiddenProjects v-if="store.scope === SCOPE_HIDDEN" />
+
       <div
-        v-if="!store.projects.length"
+        v-else-if="!store.projects.length"
         class="mx-auto flex max-w-sm flex-col items-center gap-3 py-20 text-center"
       >
         <h2 class="text-base font-semibold">添加一个代码目录开始使用</h2>

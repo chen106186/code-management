@@ -6,7 +6,9 @@ import {
   formatRelative,
   matchesCategory,
   matchesFilter,
-  matchesQuery
+  matchesHiddenQuery,
+  matchesQuery,
+  SCOPE_HIDDEN
 } from './projectList'
 
 const git = (overrides: Partial<GitStatus> = {}): GitStatus => ({
@@ -93,6 +95,18 @@ describe('compareProjects', () => {
     const list = [project({ name: 'none', lastActivity: null }), project({ name: 'has', lastActivity: 5 })]
     list.sort((a, b) => compareProjects(a, b, 'activity'))
     expect(list[0].name).toBe('has')
+  })
+})
+
+describe('已隐藏', () => {
+  it('普通项目不属于已隐藏范围', () => {
+    expect(matchesCategory(project(), SCOPE_HIDDEN, new Set([SCOPE_HIDDEN]))).toBe(false)
+  })
+
+  it('可以按名称、备注和路径搜索', () => {
+    const hidden = { path: 'E:\\code\\app', name: 'app', remark: '官网后台' }
+    for (const q of ['APP', '官网', 'code', ' ']) expect(matchesHiddenQuery(hidden, q)).toBe(true)
+    expect(matchesHiddenQuery(hidden, '不存在')).toBe(false)
   })
 })
 

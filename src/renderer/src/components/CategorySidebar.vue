@@ -3,6 +3,7 @@ import { computed, nextTick, ref } from 'vue'
 import {
   ChevronDown,
   ChevronRight,
+  EyeOff,
   Folder,
   FolderPlus,
   Inbox,
@@ -23,7 +24,7 @@ import {
 } from '@shared/categories'
 import logo from '@renderer/assets/logo.png'
 import { CATEGORY_DRAG_TYPE, PROJECT_DRAG_TYPE } from '@renderer/lib/projectDrag'
-import { SCOPE_ALL, SCOPE_UNCATEGORIZED } from '@renderer/lib/projectList'
+import { SCOPE_ALL, SCOPE_HIDDEN, SCOPE_UNCATEGORIZED } from '@renderer/lib/projectList'
 import { useProjectsStore } from '@renderer/stores/projects'
 
 const store = useProjectsStore()
@@ -236,6 +237,18 @@ const rowClass = (scope: string): string =>
             <Inbox :size="14" class="shrink-0" />
             <span class="min-w-0 flex-1 truncate">未分类</span>
             <span class="text-xs tabular-nums opacity-60">{{ store.uncategorizedCount }}</span>
+          </button>
+        </li>
+        <li>
+          <button
+            class="flex h-7 w-full items-center gap-1.5 rounded-md px-2 text-left"
+            :class="rowClass(SCOPE_HIDDEN)"
+            :aria-current="store.scope === SCOPE_HIDDEN ? 'true' : undefined"
+            @click="store.scope = SCOPE_HIDDEN"
+          >
+            <EyeOff :size="14" class="shrink-0" />
+            <span class="min-w-0 flex-1 truncate">已隐藏</span>
+            <span class="text-xs tabular-nums opacity-60" data-testid="hidden-count">{{ store.hiddenProjects.length }}</span>
           </button>
         </li>
       </ul>

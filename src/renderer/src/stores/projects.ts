@@ -2,7 +2,15 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import type { Branch, FetchAllItem } from '@shared/repo'
 import { subtreeIds } from '@shared/categories'
-import type { Category, Config, Project, ScanError, Snapshot, ThemeSetting } from '@shared/types'
+import type {
+  Category,
+  Config,
+  HiddenProject,
+  Project,
+  ScanError,
+  Snapshot,
+  ThemeSetting
+} from '@shared/types'
 import { errorMessage } from '@renderer/lib/errors'
 import {
   compareProjects,
@@ -10,8 +18,10 @@ import {
   FILTERS,
   matchesCategory,
   matchesFilter,
+  matchesHiddenQuery,
   matchesQuery,
   SCOPE_ALL,
+  SCOPE_HIDDEN,
   SCOPE_UNCATEGORIZED,
   type CategoryScope,
   type FilterKind,
@@ -38,6 +48,7 @@ export interface FetchSummary {
 
 export const useProjectsStore = defineStore('projects', () => {
   const projects = ref<Project[]>([])
+  const hiddenProjects = ref<HiddenProject[]>([])
   const config = ref<Config>({
     roots: [],
     manual: [],
@@ -76,6 +87,10 @@ export const useProjectsStore = defineStore('projects', () => {
     return projects.value.filter((p) => matchesCategory(p, scope.value, ids))
   })
 
+  const visibleHidden = computed(() =>
+    hiddenProjects.value.filter((p) => matchesHiddenQuery(p, query.value))
+  )
+
   const allTags = computed(() =>
     [...new Set(projects.value.flatMap((p) => p.tags))].sort((a, b) => a.localeCompare(b, 'zh-CN'))
   )
@@ -105,6 +120,7 @@ export const useProjectsStore = defineStore('projects', () => {
 
   function apply(snapshot: Snapshot): void {
     projects.value = snapshot.projects
+    hiddenProjects.value = snapshot.hiddenProjects
     config.value = snapshot.config
     scanErrors.value = snapshot.scanErrors
     if (activeTag.value && !allTags.value.includes(activeTag.value)) activeTag.value = null
@@ -148,7 +164,8 @@ export const useProjectsStore = defineStore('projects', () => {
     for (const project of projects.value) {
       if (project.categoryId && !ids.has(project.categoryId)) project.categoryId = null
     }
-    if (scope.value !== SCOPE_ALL && scope.value !== SCOPE_UNCATEGORIZED && !ids.has(scope.value)) {
+    const fixedScopes = [SCOPE_ALL, SCOPE_UNCATEGORIZED, SCOPE_HIDDEN]
+    if (!fixedScopes.includes(scope.value) && !ids.has(scope.value)) {
       scope.value = SCOPE_ALL
     }
   }
@@ -234,6 +251,8 @@ export const useProjectsStore = defineStore('projects', () => {
     filter,
     activeTag,
     sort,
+    hiddenProjects,
+    visibleHidden,
     scope,
     scopedProjects,
     collapsed,

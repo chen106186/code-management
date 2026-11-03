@@ -354,6 +354,10 @@ describe('ProjectService', () => {
     const snapshot = await service.snapshot()
 
     expect(snapshot.projects.map((p) => p.name).sort()).toEqual(['one', 'svc-manual'])
+    store.setRemark(dir('svc-root', 'two'), '第二个项目')
+    expect((await service.snapshot()).hiddenProjects).toEqual([
+      { path: dir('svc-root', 'two'), name: 'two', remark: '第二个项目' }
+    ])
     expect(service.isKnown(dir('svc-root', 'two'))).toBe(true)
     expect(service.isKnown(dir('别的目录'))).toBe(false)
   })

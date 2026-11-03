@@ -1,9 +1,10 @@
-import type { Category, GitStatus, Project } from '@shared/types'
+import type { Category, GitStatus, HiddenProject, Project } from '@shared/types'
 
 /** 左侧选中的范围：全部、未分类，或某个分类的 id */
 export type CategoryScope = string
 export const SCOPE_ALL = 'all'
 export const SCOPE_UNCATEGORIZED = 'uncategorized'
+export const SCOPE_HIDDEN = 'hidden'
 
 export function matchesCategory(
   project: Project,
@@ -76,6 +77,12 @@ export function matchesQuery(project: Project, query: string): boolean {
     .join('\n')
     .toLowerCase()
     .includes(q)
+}
+
+export function matchesHiddenQuery(project: HiddenProject, query: string): boolean {
+  const q = query.trim().toLowerCase()
+  if (!q) return true
+  return [project.name, project.remark ?? '', project.path].join('\n').toLowerCase().includes(q)
 }
 
 /** 收藏始终排在前面 */
