@@ -1,14 +1,21 @@
 import { app, BrowserWindow, nativeTheme, shell } from 'electron'
+import { mkdirSync } from 'fs'
 import { join } from 'path'
+import icon from '../../resources/icon.png?asset'
 import { registerIpc } from './ipc'
 import { ProjectService } from './services/projects'
 import { Store } from './services/store'
 
-// 必须在 ready 之前设置；开发期数据不写 C 盘
-const dataDir =
-  process.env.CODE_MANAGEMENT_DATA_DIR ??
-  (app.isPackaged ? null : 'E:\\ClaudeData\\code-management')
-if (dataDir) app.setPath('userData', dataDir)
+const DATA_DIR = 'E:\\1024-code\\CodeManagement'
+
+// 必须在 ready 之前设置；目录建不了（比如这台电脑没有 E 盘）时退回系统默认位置，保证程序能启动
+try {
+  const dataDir = process.env.CODE_MANAGEMENT_DATA_DIR ?? DATA_DIR
+  mkdirSync(dataDir, { recursive: true })
+  app.setPath('userData', dataDir)
+} catch (error) {
+  console.warn('无法使用数据目录，改用系统默认位置', error)
+}
 
 let mainWindow: BrowserWindow | null = null
 
@@ -20,6 +27,7 @@ function createWindow(): BrowserWindow {
     minHeight: 520,
     show: false,
     autoHideMenuBar: true,
+    icon,
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#18181b' : '#fafafa',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
