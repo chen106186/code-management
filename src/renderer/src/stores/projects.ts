@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { Branch, FetchAllItem } from '@shared/repo'
 import { subtreeIds } from '@shared/categories'
 import type {
@@ -20,6 +20,7 @@ import {
   matchesFilter,
   matchesHiddenQuery,
   matchesQuery,
+  parseListPrefs,
   SCOPE_ALL,
   SCOPE_HIDDEN,
   SCOPE_UNCATEGORIZED,
@@ -30,6 +31,15 @@ import {
 
 const FOCUS_REFRESH_INTERVAL = 30_000
 const COLLAPSED_KEY = 'collapsedCategories'
+const LIST_PREFS_KEY = 'listPrefs'
+
+function loadListPrefs(): ReturnType<typeof parseListPrefs> {
+  try {
+    return parseListPrefs(localStorage.getItem(LIST_PREFS_KEY))
+  } catch {
+    return parseListPrefs(null)
+  }
+}
 
 function loadCollapsed(): Set<string> {
   try {
@@ -67,13 +77,30 @@ export const useProjectsStore = defineStore('projects', () => {
   const fetchSummary = ref<FetchSummary | null>(null)
   let fetchOpId: string | null = null
 
+  const prefs = loadListPrefs()
   const query = ref('')
-  const filter = ref<FilterKind>('all')
-  const activeTag = ref<string | null>(null)
-  const sort = ref<SortKind>('activity')
+  const filter = ref<FilterKind>(prefs.filter)
+  const activeTag = ref<string | null>(prefs.activeTag)
+  const sort = ref<SortKind>(prefs.sort)
 
-  const scope = ref<CategoryScope>(SCOPE_ALL)
+  const scope = ref<CategoryScope>(prefs.scope)
   const collapsed = ref(loadCollapsed())
+
+  watch([filter, sort, scope, activeTag], () => {
+    try {
+      localStorage.setItem(
+        LIST_PREFS_KEY,
+        JSON.stringify({
+          filter: filter.value,
+          sort: sort.value,
+          scope: scope.value,
+          activeTag: activeTag.value
+        })
+      )
+    } catch {
+      // 只是便利，存不下不影响使用
+    }
+  })
 
   const categories = computed(() => config.value.categories)
   const categoryCounts = computed(() => countByCategory(categories.value, projects.value))
@@ -118,12 +145,18 @@ export const useProjectsStore = defineStore('projects', () => {
   let requestId = 0
   let lastRefresh = 0
 
+  function checkScope(): void {
+    const fixed = [SCOPE_ALL, SCOPE_UNCATEGORIZED, SCOPE_HIDDEN].includes(scope.value)
+    if (!fixed && !categories.value.some((c) => c.id === scope.value)) scope.value = SCOPE_ALL
+  }
+
   function apply(snapshot: Snapshot): void {
     projects.value = snapshot.projects
     hiddenProjects.value = snapshot.hiddenProjects
     config.value = snapshot.config
     scanErrors.value = snapshot.scanErrors
     if (activeTag.value && !allTags.value.includes(activeTag.value)) activeTag.value = null
+    checkScope()
   }
 
   /** 执行返回快照的操作；较早发起的请求晚于新请求返回时丢弃，避免旧数据覆盖新数据 */
@@ -164,10 +197,7 @@ export const useProjectsStore = defineStore('projects', () => {
     for (const project of projects.value) {
       if (project.categoryId && !ids.has(project.categoryId)) project.categoryId = null
     }
-    const fixedScopes = [SCOPE_ALL, SCOPE_UNCATEGORIZED, SCOPE_HIDDEN]
-    if (!fixedScopes.includes(scope.value) && !ids.has(scope.value)) {
-      scope.value = SCOPE_ALL
-    }
+    checkScope()
   }
 
   /** 创建或重命名：成功返回 true，失败时显示原因并让界面保留输入 */

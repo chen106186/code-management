@@ -63,6 +63,31 @@ export function matchesFilter(project: Project, kind: FilterKind): boolean {
   }
 }
 
+export interface ListPrefs {
+  filter: FilterKind
+  sort: SortKind
+  scope: CategoryScope
+  activeTag: string | null
+}
+
+const FILTER_KINDS: readonly string[] = FILTERS.map((f) => f.kind)
+
+/** 已保存的值可能来自旧版本，无效的项退回默认；已隐藏只是临时查看，不恢复 */
+export function parseListPrefs(text: string | null): ListPrefs {
+  let raw: Partial<Record<keyof ListPrefs, unknown>> = {}
+  try {
+    raw = JSON.parse(text ?? '{}') ?? {}
+  } catch {
+    // 用默认值
+  }
+  return {
+    filter: FILTER_KINDS.includes(raw.filter as string) ? (raw.filter as FilterKind) : 'all',
+    sort: raw.sort === 'name' || raw.sort === 'changes' ? raw.sort : 'activity',
+    scope: typeof raw.scope === 'string' && raw.scope !== SCOPE_HIDDEN ? raw.scope : SCOPE_ALL,
+    activeTag: typeof raw.activeTag === 'string' ? raw.activeTag : null
+  }
+}
+
 export function matchesQuery(project: Project, query: string): boolean {
   const q = query.trim().toLowerCase()
   if (!q) return true
