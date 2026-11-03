@@ -22,6 +22,7 @@ const git = (overrides: Partial<GitStatus> = {}): GitStatus => ({
   untracked: 0,
   conflicted: 0,
   lastCommit: null,
+  remotes: [],
   ...overrides
 })
 
@@ -95,6 +96,14 @@ describe('compareProjects', () => {
     const list = [project({ name: 'none', lastActivity: null }), project({ name: 'has', lastActivity: 5 })]
     list.sort((a, b) => compareProjects(a, b, 'activity'))
     expect(list[0].name).toBe('has')
+  })
+})
+
+describe('远程地址', () => {
+  it('可以按地址搜索', () => {
+    const p = project({ git: git({ remotes: [{ name: 'origin', url: 'git@gitee.com:team/shop.git' }] }) })
+    expect(matchesQuery(p, 'gitee')).toBe(true)
+    expect(matchesQuery(project(), 'gitee')).toBe(false)
   })
 })
 

@@ -6,6 +6,12 @@ export interface LastCommit {
   time: number
 }
 
+export interface RemoteInfo {
+  name: string
+  /** 已去掉其中的账号和令牌 */
+  url: string
+}
+
 export interface GitStatus {
   /** 游离 HEAD 时为 null */
   branch: string | null
@@ -19,6 +25,7 @@ export interface GitStatus {
   untracked: number
   conflicted: number
   lastCommit: LastCommit | null
+  remotes: RemoteInfo[]
 }
 
 export interface Project {

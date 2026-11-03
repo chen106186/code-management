@@ -1,4 +1,4 @@
-import { BrowserWindow, dialog, ipcMain, nativeTheme } from 'electron'
+import { BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, shell } from 'electron'
 import {
   API_METHODS,
   channelOf,
@@ -7,8 +7,9 @@ import {
   type Api
 } from '@shared/ipc'
 import { subtreeIds } from '@shared/categories'
+import { remoteWebUrl } from '@shared/remotes'
 import type { DiffTarget, FetchAllItem } from '@shared/repo'
-import { readChanges } from './services/git'
+import { readChanges, readRemotes } from './services/git'
 import {
   assertHash,
   assertRepoPath,
@@ -199,6 +200,18 @@ export function registerIpc(
     openInEditor: (path) => openInEditor(known(path)),
     openInTerminal: (path) => openInTerminal(known(path)),
     openInExplorer: (path) => openInExplorer(known(path)),
+
+    openRemote: async (path, remoteName) => {
+      const remote = (await readRemotes(known(path))).find((r) => r.name === remoteName)
+      const url = remote && remoteWebUrl(remote.url)
+      if (!url) throw new Error('这个地址不能在浏览器打开')
+      await shell.openExternal(url)
+    },
+
+    copyText: async (text) => {
+      if (typeof text !== 'string') throw new Error('内容无效')
+      clipboard.writeText(text)
+    },
 
     getChanges: async (path) => readChanges(known(path)),
 

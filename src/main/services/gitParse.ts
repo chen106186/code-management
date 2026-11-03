@@ -1,7 +1,18 @@
 import type { Branch, ChangedFile, CommitSummary, FileState, RepoChanges } from '@shared/repo'
-import type { GitStatus, LastCommit } from '@shared/types'
+import { sanitizeRemoteUrl } from '@shared/remotes'
+import type { GitStatus, LastCommit, RemoteInfo } from '@shared/types'
 
-export type ParsedStatus = Omit<GitStatus, 'lastCommit'>
+export type ParsedStatus = Omit<GitStatus, 'lastCommit' | 'remotes'>
+
+/** 解析 `git remote -v`，同一远程只取 fetch 地址，origin 排最前 */
+export function parseRemotes(output: string): RemoteInfo[] {
+  const remotes: RemoteInfo[] = []
+  for (const line of output.split('\n')) {
+    const match = /^(\S+)\s+(.+?)\s+\(fetch\)$/.exec(line.trimEnd())
+    if (match) remotes.push({ name: match[1], url: sanitizeRemoteUrl(match[2]) })
+  }
+  return remotes.sort((a, b) => Number(b.name === 'origin') - Number(a.name === 'origin'))
+}
 
 /** 解析 `git status --porcelain=v2 --branch -z` 的输出 */
 export function parseStatus(output: string): ParsedStatus {

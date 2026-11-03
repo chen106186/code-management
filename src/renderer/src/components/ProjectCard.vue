@@ -23,11 +23,13 @@ import {
   Tag,
   Terminal,
   TriangleAlert,
+  Unlink,
   X
 } from 'lucide-vue-next'
 import { flattenCategories } from '@shared/categories'
 import type { Project } from '@shared/types'
 import BranchSwitcher from '@renderer/components/BranchSwitcher.vue'
+import RemoteRow from '@renderer/components/RemoteRow.vue'
 import TechIcon from '@renderer/components/TechIcon.vue'
 import { PROJECT_DRAG_TYPE } from '@renderer/lib/projectDrag'
 import { changeCount, formatRelative } from '@renderer/lib/projectList'
@@ -278,6 +280,16 @@ function removeTag(tag: string): void {
         </div>
         <p v-else class="flex items-center gap-1 text-zinc-400">
           <GitCommitHorizontal :size="13" /> 尚无提交
+        </p>
+        <RemoteRow
+          v-for="remote in git.remotes"
+          :key="remote.name"
+          :project-path="project.path"
+          :remote="remote"
+          :show-name="git.remotes.length > 1"
+        />
+        <p v-if="!git.remotes.length" class="flex h-5 items-center gap-1 text-zinc-400">
+          <Unlink :size="12" class="shrink-0" /> 未配置远程地址
         </p>
       </template>
 

@@ -1,7 +1,13 @@
 import { execFile } from 'child_process'
 import type { RepoChanges } from '@shared/repo'
-import type { GitStatus } from '@shared/types'
-import { LAST_COMMIT_FORMAT, parseChanges, parseLastCommit, parseStatus } from './gitParse'
+import type { GitStatus, RemoteInfo } from '@shared/types'
+import {
+  LAST_COMMIT_FORMAT,
+  parseChanges,
+  parseLastCommit,
+  parseRemotes,
+  parseStatus
+} from './gitParse'
 
 export class GitError extends Error {
   constructor(
@@ -79,19 +85,23 @@ export function runGitBuffer(cwd: string, args: string[], options: RunOptions = 
 
 const STATUS_ARGS = ['status', '--porcelain=v2', '--branch', '-z', '--untracked-files=all']
 
-async function withLastCommit(cwd: string, output: string): Promise<GitStatus> {
+export async function readRemotes(cwd: string): Promise<RemoteInfo[]> {
+  return parseRemotes(await runGit(cwd, ['remote', '-v']))
+}
+
+async function fullStatus(cwd: string, output: string): Promise<GitStatus> {
   const status = parseStatus(output)
   const lastCommit = status.head
     ? parseLastCommit(await runGit(cwd, ['log', '-1', `--format=${LAST_COMMIT_FORMAT}`]))
     : null
-  return { ...status, lastCommit }
+  return { ...status, lastCommit, remotes: await readRemotes(cwd) }
 }
 
 export async function readStatus(cwd: string): Promise<GitStatus> {
-  return withLastCommit(cwd, await runGit(cwd, STATUS_ARGS))
+  return fullStatus(cwd, await runGit(cwd, STATUS_ARGS))
 }
 
 export async function readChanges(cwd: string): Promise<RepoChanges> {
   const output = await runGit(cwd, STATUS_ARGS)
-  return { status: await withLastCommit(cwd, output), ...parseChanges(output) }
+  return { status: await fullStatus(cwd, output), ...parseChanges(output) }
 }

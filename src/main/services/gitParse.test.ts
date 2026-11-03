@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseLastCommit, parseStatus } from './gitParse'
+import { parseLastCommit, parseRemotes, parseStatus } from './gitParse'
 
 const entries = (...tokens: string[]): string => tokens.join('\0') + '\0'
 
@@ -62,6 +62,26 @@ describe('parseStatus', () => {
 
   it('空输出得到默认值', () => {
     expect(parseStatus('')).toMatchObject({ branch: null, head: null, ahead: 0, behind: 0 })
+  })
+})
+
+describe('parseRemotes', () => {
+  it('只取 fetch 地址，origin 排最前，去掉令牌，路径可含空格', () => {
+    const output = [
+      'backup\tE:\\my repos\\b.git (fetch)',
+      'backup\tE:\\my repos\\b.git (push)',
+      'origin\thttps://ghp_secret@github.com/a/b.git (fetch)',
+      'origin\thttps://ghp_secret@github.com/a/b.git (push)',
+      ''
+    ].join('\n')
+    expect(parseRemotes(output)).toEqual([
+      { name: 'origin', url: 'https://github.com/a/b.git' },
+      { name: 'backup', url: 'E:\\my repos\\b.git' }
+    ])
+  })
+
+  it('没有远程时返回空', () => {
+    expect(parseRemotes('')).toEqual([])
   })
 })
 

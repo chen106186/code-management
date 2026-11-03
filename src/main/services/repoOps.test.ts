@@ -359,6 +359,24 @@ describe('分支列表', () => {
   })
 })
 
+describe('远程地址', () => {
+  it('从真实仓库读取，令牌不出现在结果里', async () => {
+    const repo = await newRepo()
+    await runGit(repo, ['remote', 'add', 'upstream', 'git@github.com:a/up.git'])
+    await runGit(repo, ['remote', 'add', 'origin', 'https://ghp_secret@github.com/a/b.git'])
+    const { status } = await readChanges(repo)
+    expect(status.remotes).toEqual([
+      { name: 'origin', url: 'https://github.com/a/b.git' },
+      { name: 'upstream', url: 'git@github.com:a/up.git' }
+    ])
+    expect(JSON.stringify(status)).not.toContain('ghp_secret')
+  })
+
+  it('没有远程时为空', async () => {
+    expect((await readChanges(await newRepo())).status.remotes).toEqual([])
+  })
+})
+
 describe('切换分支', () => {
   const current = async (repo: string): Promise<string | undefined> =>
     (await listBranches(repo)).find((b) => b.current)?.name

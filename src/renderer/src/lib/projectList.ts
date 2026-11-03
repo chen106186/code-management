@@ -71,6 +71,7 @@ export function matchesQuery(project: Project, query: string): boolean {
     project.remark ?? '',
     project.path,
     project.git?.branch ?? '',
+    ...(project.git?.remotes.map((r) => r.url) ?? []),
     ...project.tech,
     ...project.tags
   ]

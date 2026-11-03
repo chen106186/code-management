@@ -36,6 +36,9 @@ export interface Api {
   openInEditor(path: string): Promise<void>
   openInTerminal(path: string): Promise<void>
   openInExplorer(path: string): Promise<void>
+  /** 在浏览器打开远程仓库页面；地址由主进程读取，不信任页面传来的网址 */
+  openRemote(path: string, remoteName: string): Promise<void>
+  copyText(text: string): Promise<void>
 
   getChanges(path: string): Promise<RepoChanges>
   getDiff(path: string, target: DiffTarget): Promise<DiffContent>
@@ -81,6 +84,8 @@ export const API_METHODS = [
   'openInEditor',
   'openInTerminal',
   'openInExplorer',
+  'openRemote',
+  'copyText',
   'getChanges',
   'getDiff',
   'getLog',

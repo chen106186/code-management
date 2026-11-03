@@ -318,6 +318,18 @@ export const useProjectsStore = defineStore('projects', () => {
     openInEditor: (path: string) => guard(() => window.api.openInEditor(path)),
     openInTerminal: (path: string) => guard(() => window.api.openInTerminal(path)),
     openInExplorer: (path: string) => guard(() => window.api.openInExplorer(path)),
+    openRemote: (path: string, remoteName: string) =>
+      guard(() => window.api.openRemote(path, remoteName)),
+    /** 成功返回 true，让界面给出已复制的反馈 */
+    copyText: async (text: string): Promise<boolean> => {
+      try {
+        await window.api.copyText(text)
+        return true
+      } catch (e) {
+        error.value = errorMessage(e)
+        return false
+      }
+    },
     toggleFavorite: (path: string) =>
       guard(async () => {
         const project = find(path)
