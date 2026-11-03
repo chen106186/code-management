@@ -95,8 +95,16 @@ onBeforeUnmount(() => {
             type="search"
             placeholder="搜索名称、备注、路径、分支、技术栈或标签"
             aria-label="搜索项目"
-            class="field w-full pl-7"
+            class="field w-full pl-7 pr-16"
           />
+          <button
+            class="absolute right-1.5 top-1/2 -translate-y-1/2 rounded border border-zinc-300 px-1.5 text-[11px] leading-5 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-700"
+            title="快速跳转到项目"
+            data-testid="quick-jump-open"
+            @click.prevent="store.quickJumpOpen = true"
+          >
+            Ctrl K
+          </button>
         </label>
         <button class="btn" :disabled="store.loading" @click="store.refresh()">
           <RefreshCw :size="14" :class="store.loading ? 'animate-spin' : ''" /> 刷新

@@ -9,6 +9,7 @@ import {
   matchesHiddenQuery,
   matchesQuery,
   parseListPrefs,
+  rankProjects,
   SCOPE_ALL,
   SCOPE_HIDDEN,
   STALE_MS
@@ -74,6 +75,30 @@ describe('parseListPrefs', () => {
     expect(
       parseListPrefs(JSON.stringify({ filter: '旧', sort: 1, scope: SCOPE_HIDDEN, activeTag: 2, viewMode: 'x' }))
     ).toEqual(defaults)
+  })
+})
+
+describe('rankProjects', () => {
+  const names = (list: Project[]): string[] => list.map((p) => p.name)
+
+  it('名称开头优先于包含，再优先于其他字段，备注也算名称', () => {
+    const list = [
+      project({ name: 'other', path: 'E:\\web\\other' }),
+      project({ name: 'my-web', path: 'E:\\my-web' }),
+      project({ name: 'web-app', path: 'E:\\web-app', lastActivity: 2 }),
+      project({ name: 'x', remark: 'Web 后台', path: 'E:\\x', lastActivity: 1 }),
+      project({ name: 'none', path: 'E:\\none' })
+    ]
+    expect(names(rankProjects(list, 'web'))).toEqual(['web-app', 'x', 'my-web', 'other'])
+  })
+
+  it('没有输入时收藏在前，其余按最近活跃', () => {
+    const list = [
+      project({ name: 'old', lastActivity: 1 }),
+      project({ name: 'new', lastActivity: 2 }),
+      project({ name: 'star', lastActivity: 0, favorite: true })
+    ]
+    expect(names(rankProjects(list, ' '))).toEqual(['star', 'new', 'old'])
   })
 })
 

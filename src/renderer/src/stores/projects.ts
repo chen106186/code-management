@@ -109,6 +109,8 @@ export const useProjectsStore = defineStore('projects', () => {
     }
   })
 
+  const quickJumpOpen = ref(false)
+
   const categories = computed(() => config.value.categories)
   const categoryCounts = computed(() => countByCategory(categories.value, projects.value))
   const uncategorizedCount = computed(
@@ -319,6 +321,7 @@ export const useProjectsStore = defineStore('projects', () => {
     projects,
     moves,
     viewMode,
+    quickJumpOpen,
     selected,
     selectedPaths,
     toggleSelected,

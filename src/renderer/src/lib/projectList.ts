@@ -108,6 +108,21 @@ export function parseListPrefs(text: string | null): ListPrefs {
   }
 }
 
+/** 快速跳转：名称开头最优先，其次名称包含，最后是路径、分支等其他字段；同档按最近活跃 */
+export function rankProjects(projects: Project[], query: string): Project[] {
+  const q = query.trim().toLowerCase()
+  const tier = (project: Project): number => {
+    const names = [project.remark ?? '', project.name].map((n) => n.toLowerCase())
+    if (names.some((n) => n.startsWith(q))) return 0
+    return names.some((n) => n.includes(q)) ? 1 : 2
+  }
+  return projects
+    .filter((p) => matchesQuery(p, q))
+    .map((project) => ({ project, rank: q ? tier(project) : 0 }))
+    .sort((a, b) => a.rank - b.rank || compareProjects(a.project, b.project, 'activity'))
+    .map(({ project }) => project)
+}
+
 export function matchesQuery(project: Project, query: string): boolean {
   const q = query.trim().toLowerCase()
   if (!q) return true
