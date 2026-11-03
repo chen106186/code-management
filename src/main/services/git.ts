@@ -16,7 +16,7 @@ export class GitError extends Error {
 const TIMEOUT_MS = 15_000
 const MAX_BUFFER = 32 * 1024 * 1024
 
-// 后台轮询不抢占 index.lock；路径一律按字面匹配；输出保持英文和原始 UTF-8，便于解析
+// 只读展示：不抢占 index.lock，也不刷新 index；路径一律按字面匹配；输出保持英文和原始 UTF-8，便于解析
 export const GIT_BASE_ARGS = ['--no-optional-locks', '--literal-pathspecs', '-c', 'core.quotepath=false']
 
 export function gitEnv(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
@@ -24,8 +24,6 @@ export function gitEnv(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
 }
 
 export interface RunOptions {
-  /** 写入 stdin 的内容 */
-  input?: string
   timeoutMs?: number
   maxBuffer?: number
 }
@@ -57,7 +55,7 @@ function run<T extends string | Buffer>(
         if (code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') {
           return reject(new GitError('输出过大', false, true))
         }
-        // hint 行是给命令行用户的建议，比如教人用 -D 强制删除，界面上不显示
+        // hint 行是给命令行用户的建议，界面上不显示
         const message = stderr
           .toString()
           .split(/\r?\n/)
@@ -67,7 +65,7 @@ function run<T extends string | Buffer>(
         reject(new GitError(message || error.message))
       }
     )
-    child.stdin?.end(options.input)
+    child.stdin?.end()
   })
 }
 
@@ -96,8 +94,4 @@ export async function readStatus(cwd: string): Promise<GitStatus> {
 export async function readChanges(cwd: string): Promise<RepoChanges> {
   const output = await runGit(cwd, STATUS_ARGS)
   return { status: await withLastCommit(cwd, output), ...parseChanges(output) }
-}
-
-export async function initRepo(cwd: string): Promise<void> {
-  await runGit(cwd, ['init'])
 }

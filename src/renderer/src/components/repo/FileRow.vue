@@ -37,6 +37,5 @@ const title = computed(() =>
       <span class="shrink-0 truncate" style="max-width: 70%">{{ name }}</span>
       <span class="min-w-0 truncate text-xs text-zinc-400">{{ dir }}</span>
     </button>
-    <slot />
   </li>
 </template>

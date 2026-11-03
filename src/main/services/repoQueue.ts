@@ -1,6 +1,6 @@
 import { pathKey } from './store'
 
-/** 同一仓库的写操作依次执行，避免互相撞上 index.lock；不同仓库互不影响 */
+/** 同一仓库的 Fetch 依次执行，避免单个和批量 Fetch 同时跑；不同仓库互不影响 */
 export class RepoQueue {
   private tails = new Map<string, Promise<unknown>>()
 

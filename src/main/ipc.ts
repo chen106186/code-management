@@ -6,26 +6,20 @@ import {
   EVENT_REPO_CHANGED,
   type Api
 } from '@shared/ipc'
-import type { Branch, DiffTarget, FetchAllItem, RemoteKind } from '@shared/repo'
-import { initRepo, readChanges } from './services/git'
+import type { DiffTarget, FetchAllItem } from '@shared/repo'
+import { readChanges } from './services/git'
 import {
   assertHash,
   assertRepoPath,
-  commit,
-  createBranch,
-  deleteBranch,
   listBranches,
   listRemotes,
   readCommit,
   readDiff,
-  readLog,
-  stageFiles,
-  switchBranch,
-  unstageFiles
+  readLog
 } from './services/gitOps'
 import { openInEditor, openInExplorer, openInTerminal } from './services/openers'
 import { mapLimit, type ProjectService } from './services/projects'
-import { runRemote } from './services/remoteOps'
+import { runFetch } from './services/remoteOps'
 import { RepoQueue } from './services/repoQueue'
 import { RepoWatcher } from './services/repoWatcher'
 import type { Store } from './services/store'
@@ -58,11 +52,6 @@ export function registerIpc(
       throw new Error('未登记的项目路径')
     }
     return path
-  }
-
-  const repoFiles = (repo: string, files: unknown): string[] => {
-    if (!Array.isArray(files) || !files.length) throw new Error('没有选择文件')
-    return files.map((file) => assertRepoPath(repo, file))
   }
 
   const diffTarget = (repo: string, target: DiffTarget): DiffTarget => {
@@ -116,22 +105,6 @@ export function registerIpc(
       return projects.snapshot()
     },
 
-    initGit: async (path) => {
-      const target = known(path)
-      const { response } = await dialog.showMessageBox(getWindow(), {
-        type: 'question',
-        title: '初始化 Git 仓库',
-        message: `在此目录运行 git init？`,
-        detail: `${target}\n\n只会创建 .git 目录，不会改动现有文件，也不会自动提交。`,
-        buttons: ['初始化', '取消'],
-        defaultId: 0,
-        cancelId: 1
-      })
-      if (response !== 0) return null
-      await initRepo(target)
-      return projects.snapshot()
-    },
-
     removeRoot: async (path) => {
       if (typeof path !== 'string') throw new Error('路径无效')
       store.removeRoot(path)
@@ -176,24 +149,6 @@ export function registerIpc(
       return readDiff(repo, diffTarget(repo, target))
     },
 
-    stage: async (path, files) => {
-      const repo = known(path)
-      const paths = repoFiles(repo, files)
-      await queue.run(repo, () => stageFiles(repo, paths))
-    },
-
-    unstage: async (path, files) => {
-      const repo = known(path)
-      const paths = repoFiles(repo, files)
-      await queue.run(repo, () => unstageFiles(repo, paths))
-    },
-
-    commit: async (path, message) => {
-      const repo = known(path)
-      if (typeof message !== 'string') throw new Error('提交信息无效')
-      await queue.run(repo, () => commit(repo, message))
-    },
-
     getLog: async (path, skip, limit) => {
       const repo = known(path)
       const validSkip = Number.isInteger(skip) && skip >= 0 ? skip : 0
@@ -205,42 +160,12 @@ export function registerIpc(
 
     getBranches: async (path) => listBranches(known(path)),
 
-    switchBranch: async (path, name, kind) => {
+    fetchRepo: async (path, opId) => {
       const repo = known(path)
-      const branchKind: Branch['kind'] = kind === 'remote' ? 'remote' : 'local'
-      await queue.run(repo, () => switchBranch(repo, name, branchKind))
-    },
-
-    createBranch: async (path, name) => {
-      const repo = known(path)
-      await queue.run(repo, () => createBranch(repo, name))
-    },
-
-    deleteBranch: async (path, name) => {
-      const repo = known(path)
-      const { response } = await dialog.showMessageBox(getWindow(), {
-        type: 'warning',
-        title: '删除分支',
-        message: `删除本地分支 ${name}？`,
-        detail: '只删除已合并的分支。未合并的分支 Git 会拒绝删除，提交不会丢失。',
-        buttons: ['删除', '取消'],
-        defaultId: 1,
-        cancelId: 1
-      })
-      if (response !== 0) return false
-      await queue.run(repo, () => deleteBranch(repo, name))
-      return true
-    },
-
-    runRemote: async (path, kind, opId) => {
-      const repo = known(path)
-      if (!(['fetch', 'pull', 'push'] satisfies RemoteKind[]).includes(kind)) {
-        throw new Error('操作类型无效')
-      }
       const controller = beginOperation(opId)
       try {
         return await queue.run(repo, () =>
-          runRemote(repo, kind, {
+          runFetch(repo, {
             signal: controller.signal,
             onProgress: (line) => send(EVENT_REMOTE_PROGRESS, { opId, line })
           })
@@ -261,7 +186,7 @@ export function registerIpc(
             const base = { path: project.path, name: project.name }
             // 没有配置远程的仓库不算失败，也不计入结果
             if (!(await listRemotes(project.path)).length) return null
-            const result = await runRemote(project.path, 'fetch', {
+            const result = await runFetch(project.path, {
               signal: controller.signal,
               nonInteractive: true,
               timeoutMs: FETCH_ALL_TIMEOUT_MS

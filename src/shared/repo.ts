@@ -65,8 +65,6 @@ export interface CommitDetail extends Omit<CommitSummary, 'subject' | 'refs'> {
   files: ChangedFile[]
 }
 
-export type RemoteKind = 'fetch' | 'pull' | 'push'
-
 export interface RemoteResult {
   ok: boolean
   cancelled: boolean

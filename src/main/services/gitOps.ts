@@ -12,8 +12,6 @@ import {
 } from './gitParse'
 import { isWithin } from './store'
 
-const LONG_TIMEOUT_MS = 5 * 60_000
-const MAX_ARGS_LENGTH = 20_000
 const MAX_DIFF_BYTES = 2 * 1024 * 1024
 
 /** 路径必须是仓库内的相对路径，且不能指向 .git */
@@ -30,37 +28,6 @@ export function assertRepoPath(cwd: string, path: unknown): string {
 export function assertHash(hash: unknown): string {
   if (typeof hash !== 'string' || !/^[0-9a-f]{7,64}$/i.test(hash)) throw new Error('提交号无效')
   return hash
-}
-
-/** 分批执行，避免文件很多时超过 Windows 命令行长度限制 */
-async function forPathChunks(paths: string[], fn: (chunk: string[]) => Promise<unknown>): Promise<void> {
-  let chunk: string[] = []
-  let length = 0
-  for (const path of paths) {
-    if (chunk.length && length + path.length > MAX_ARGS_LENGTH) {
-      await fn(chunk)
-      chunk = []
-      length = 0
-    }
-    chunk.push(path)
-    length += path.length + 3
-  }
-  if (chunk.length) await fn(chunk)
-}
-
-export async function stageFiles(cwd: string, paths: string[]): Promise<void> {
-  await forPathChunks(paths, (chunk) => runGit(cwd, ['add', '-A', '--', ...chunk]))
-}
-
-/** 用 reset 而不是 restore --staged：尚无提交的仓库也能取消暂存 */
-export async function unstageFiles(cwd: string, paths: string[]): Promise<void> {
-  await forPathChunks(paths, (chunk) => runGit(cwd, ['reset', '-q', '--', ...chunk]))
-}
-
-export async function commit(cwd: string, message: string): Promise<void> {
-  if (!message.trim()) throw new Error('提交信息不能为空')
-  // 走 stdin：多行和特殊字符都不必转义；提交钩子可能较慢，放宽超时
-  await runGit(cwd, ['commit', '-F', '-'], { input: message, timeoutMs: LONG_TIMEOUT_MS })
 }
 
 const TOO_LARGE = Symbol('too-large')
@@ -172,43 +139,6 @@ export async function listBranches(cwd: string): Promise<Branch[]> {
       'refs/remotes'
     ])
   )
-}
-
-async function assertBranchName(cwd: string, name: unknown): Promise<string> {
-  if (typeof name !== 'string' || !name.trim() || name.startsWith('-')) {
-    throw new Error('分支名无效')
-  }
-  try {
-    await runGit(cwd, ['check-ref-format', '--branch', name])
-  } catch {
-    throw new Error(`分支名无效：${name}`)
-  }
-  return name
-}
-
-export async function switchBranch(cwd: string, name: string, kind: Branch['kind']): Promise<void> {
-  const branch = await assertBranchName(cwd, name)
-  // 工作区改动会被覆盖时 git 会拒绝并报错，这里不加 --force 或 --discard-changes
-  await runGit(cwd, kind === 'remote' ? ['switch', '--track', branch] : ['switch', '--no-guess', branch], {
-    timeoutMs: LONG_TIMEOUT_MS
-  })
-}
-
-export async function createBranch(cwd: string, name: string): Promise<void> {
-  await runGit(cwd, ['switch', '-c', await assertBranchName(cwd, name)])
-}
-
-/** 只用 -d：未合并的分支由 git 拒绝删除，不提供强制删除 */
-export async function deleteBranch(cwd: string, name: string): Promise<void> {
-  const branch = await assertBranchName(cwd, name)
-  try {
-    await runGit(cwd, ['branch', '-d', branch])
-  } catch (error) {
-    if (/not fully merged/.test((error as Error).message)) {
-      throw new Error(`分支 ${branch} 还有未合并的提交，没有删除`)
-    }
-    throw error
-  }
 }
 
 export async function listRemotes(cwd: string): Promise<string[]> {

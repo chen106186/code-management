@@ -196,10 +196,7 @@ function removeTag(tag: string): void {
       </template>
 
       <template v-else>
-        <div class="flex items-center justify-between gap-2">
-          <span class="text-zinc-500 dark:text-zinc-400">未使用 Git</span>
-          <button class="btn h-7 text-xs" @click="store.initGit(project.path)">初始化仓库</button>
-        </div>
+        <p class="text-zinc-500 dark:text-zinc-400">未使用 Git</p>
         <p v-if="project.lastActivity" class="text-xs text-zinc-400">
           文件修改于 {{ formatRelative(project.lastActivity) }}
         </p>

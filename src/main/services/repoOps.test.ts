@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs'
 import { join, resolve } from 'path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { readChanges, runGit } from './git'
@@ -6,18 +6,12 @@ import { parseBranches, parseChanges, parseLog, parseNameStatus } from './gitPar
 import {
   assertHash,
   assertRepoPath,
-  commit,
-  createBranch,
-  deleteBranch,
   listBranches,
   readCommit,
   readDiff,
-  readLog,
-  stageFiles,
-  switchBranch,
-  unstageFiles
+  readLog
 } from './gitOps'
-import { describeRemoteError, runRemote } from './remoteOps'
+import { describeRemoteError, runFetch } from './remoteOps'
 import { RepoQueue } from './repoQueue'
 import { isRelevantChange } from './repoWatcher'
 
@@ -40,9 +34,12 @@ const write = (repo: string, file: string, content = 'x\n'): void => {
   writeFileSync(full, content)
 }
 
+const stage = (repo: string, ...paths: string[]): Promise<string> =>
+  runGit(repo, ['add', '-A', '--', ...paths])
+
 async function commitAll(repo: string, message: string): Promise<void> {
   await runGit(repo, ['add', '-A'])
-  await commit(repo, message)
+  await runGit(repo, ['commit', '-m', message])
 }
 
 /** 带本地裸仓库上游的仓库 */
@@ -72,7 +69,7 @@ beforeAll(() => {
 })
 
 afterAll(() => {
-  // 被取消的钩子进程可能还占着目录一小会儿
+  // 被取消的 git 子进程可能还占着目录一小会儿
   rmSync(tmp, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 })
 })
 
@@ -137,9 +134,7 @@ describe('解析', () => {
   })
 
   it('describeRemoteError 给出中文提示并保留原始信息', () => {
-    expect(describeRemoteError('hint: x\nfatal: Not possible to fast-forward, aborting.\n')).toContain(
-      '已分叉'
-    )
+    expect(describeRemoteError('hint: x\nfatal: Authentication failed for url\n')).toContain('认证失败')
     expect(describeRemoteError('fatal: 其他错误\n')).toBe('fatal: 其他错误')
   })
 })
@@ -161,52 +156,59 @@ describe('输入校验', () => {
   })
 })
 
-describe('暂存和提交', () => {
-  it('暂存、取消暂存：中文、空格和像通配符的文件名都按字面处理', async () => {
+describe('只读', () => {
+  it('所有读取操作都不改动仓库', async () => {
+    const repo = await newRepo()
+    write(repo, 'a.txt', '1\n')
+    await commitAll(repo, 'init')
+    write(repo, 'a.txt', '2\n')
+    await stage(repo, 'a.txt')
+    write(repo, 'a.txt', '3\n')
+    write(repo, 'new.txt')
+
+    const fingerprint = (): unknown => ({
+      index: readFileSync(join(repo, '.git/index')).toString('base64'),
+      indexMtime: statSync(join(repo, '.git/index')).mtimeMs,
+      head: readFileSync(join(repo, '.git/HEAD'), 'utf8'),
+      main: readFileSync(join(repo, '.git/refs/heads/main'), 'utf8'),
+      file: readFileSync(join(repo, 'a.txt'), 'utf8')
+    })
+    const before = fingerprint()
+
+    const [latest] = await readLog(repo, 0, 10)
+    await readChanges(repo)
+    await listBranches(repo)
+    await readCommit(repo, latest.hash)
+    await readDiff(repo, { kind: 'staged', path: 'a.txt', origPath: null })
+    await readDiff(repo, { kind: 'unstaged', path: 'a.txt', origPath: null })
+    await readDiff(repo, { kind: 'unstaged', path: 'new.txt', origPath: null })
+
+    expect(fingerprint()).toEqual(before)
+  })
+})
+
+describe('读取变更', () => {
+  it('中文、空格和像通配符的文件名都能列出', async () => {
     const repo = await newRepo()
     write(repo, '中文 文件.txt')
     write(repo, 'a[1].txt')
-    write(repo, 'a1.txt')
+    await stage(repo, '中文 文件.txt')
 
-    await stageFiles(repo, ['中文 文件.txt', 'a[1].txt'])
-    let changes = await readChanges(repo)
-    expect(changes.staged.map((f) => f.path).sort()).toEqual(['a[1].txt', '中文 文件.txt'])
-    expect(changes.unstaged.map((f) => f.path)).toEqual(['a1.txt'])
-
-    // 尚无提交时也能取消暂存
-    await unstageFiles(repo, ['a[1].txt'])
-    changes = await readChanges(repo)
+    const changes = await readChanges(repo)
     expect(changes.staged.map((f) => f.path)).toEqual(['中文 文件.txt'])
-
-    await commit(repo, '提交：多行\n\n正文 "引号" $HOME')
-    const [latest] = await readLog(repo, 0, 1)
-    expect(latest.subject).toBe('提交：多行')
-    expect((await readCommit(repo, latest.hash)).message).toBe('提交：多行\n\n正文 "引号" $HOME')
-    expect((await readChanges(repo)).staged).toEqual([])
+    expect(changes.unstaged.map((f) => f.path)).toEqual(['a[1].txt'])
   })
 
-  it('暂存已删除的文件，取消暂存重命名时两个路径都恢复', async () => {
+  it('重命名记录原路径', async () => {
     const repo = await newRepo()
     write(repo, 'old.txt', 'line\n'.repeat(20))
-    write(repo, 'gone.txt')
     await commitAll(repo, 'init')
-
-    rmSync(join(repo, 'gone.txt'))
-    await stageFiles(repo, ['gone.txt'])
-    expect((await readChanges(repo)).staged[0]).toMatchObject({ path: 'gone.txt', state: 'deleted' })
-    await unstageFiles(repo, ['gone.txt'])
-
     await runGit(repo, ['mv', 'old.txt', 'new.txt'])
-    const renamed = (await readChanges(repo)).staged[0]
-    expect(renamed).toMatchObject({ path: 'new.txt', origPath: 'old.txt', state: 'renamed' })
-    await unstageFiles(repo, [renamed.path, renamed.origPath!])
-    expect((await readChanges(repo)).staged).toEqual([])
-  })
-
-  it('提交信息为空时拒绝；没有暂存内容时返回 git 的错误', async () => {
-    const repo = await newRepo()
-    await expect(commit(repo, '   ')).rejects.toThrow('不能为空')
-    await expect(commit(repo, 'x')).rejects.toThrow()
+    expect((await readChanges(repo)).staged[0]).toMatchObject({
+      path: 'new.txt',
+      origPath: 'old.txt',
+      state: 'renamed'
+    })
   })
 })
 
@@ -218,7 +220,7 @@ describe('readDiff', () => {
     await commitAll(repo, 'init')
 
     write(repo, 'a.txt', 'v2\n')
-    await stageFiles(repo, ['a.txt'])
+    await stage(repo, 'a.txt')
     write(repo, 'a.txt', 'v3\n')
     rmSync(join(repo, 'del.txt'))
     write(repo, 'new.txt', 'new\n')
@@ -242,7 +244,7 @@ describe('readDiff', () => {
       original: '',
       modified: '新\n'
     })
-    await stageFiles(repo, ['图片 说明.txt'])
+    await stage(repo, '图片 说明.txt')
     expect(await readDiff(repo, { kind: 'staged', path: '图片 说明.txt', origPath: null })).toMatchObject({
       original: '',
       modified: '新\n'
@@ -258,7 +260,7 @@ describe('readDiff', () => {
   it('尚无提交时已暂存文件的原内容为空', async () => {
     const repo = await newRepo()
     write(repo, 'a.txt', 'v1\n')
-    await stageFiles(repo, ['a.txt'])
+    await stage(repo, 'a.txt')
     expect(await readDiff(repo, { kind: 'staged', path: 'a.txt', origPath: null })).toMatchObject({
       original: '',
       modified: 'v1\n'
@@ -270,7 +272,7 @@ describe('readDiff', () => {
     write(repo, 'old.txt', 'line\n'.repeat(20))
     await commitAll(repo, 'root')
     await runGit(repo, ['mv', 'old.txt', 'new.txt'])
-    await commit(repo, 'rename')
+    await runGit(repo, ['commit', '-m', 'rename'])
 
     const [second, first] = await readLog(repo, 0, 2)
     const rootDetail = await readCommit(repo, first.hash)
@@ -298,7 +300,7 @@ describe('readDiff', () => {
     expect(await of('bin.dat')).toEqual({ original: '', modified: '', binary: true, tooLarge: false })
     expect(await of('big.txt')).toEqual({ original: '', modified: '', binary: false, tooLarge: true })
 
-    await stageFiles(repo, ['big.txt'])
+    await stage(repo, 'big.txt')
     expect(await readDiff(repo, { kind: 'staged', path: 'big.txt', origPath: null })).toMatchObject({
       tooLarge: true
     })
@@ -306,7 +308,7 @@ describe('readDiff', () => {
 })
 
 describe('历史', () => {
-  it('分页读取，尚无提交时返回空', async () => {
+  it('分页读取，尚无提交时返回空；多行提交信息完整保留', async () => {
     const repo = await newRepo()
     expect(await readLog(repo, 0, 10)).toEqual([])
     for (const n of [1, 2, 3]) {
@@ -315,16 +317,22 @@ describe('历史', () => {
     }
     expect((await readLog(repo, 0, 2)).map((c) => c.subject)).toEqual(['c3', 'c2'])
     expect((await readLog(repo, 2, 2)).map((c) => c.subject)).toEqual(['c1'])
+
+    write(repo, 'a.txt', '4\n')
+    await runGit(repo, ['add', '-A'])
+    await runGit(repo, ['commit', '-m', '标题\n\n正文 "引号"'])
+    const [latest] = await readLog(repo, 0, 1)
+    expect((await readCommit(repo, latest.hash)).message).toBe('标题\n\n正文 "引号"')
   })
 
   it('合并提交与第一父提交比较', async () => {
     const repo = await newRepo()
     write(repo, 'a.txt')
     await commitAll(repo, 'base')
-    await createBranch(repo, 'side')
+    await runGit(repo, ['switch', '-c', 'side'])
     write(repo, 'side.txt')
     await commitAll(repo, 'side')
-    await switchBranch(repo, 'main', 'local')
+    await runGit(repo, ['switch', 'main'])
     write(repo, 'main.txt')
     await commitAll(repo, 'main')
     await runGit(repo, ['merge', '--no-ff', '-m', 'merge', 'side'])
@@ -336,153 +344,78 @@ describe('历史', () => {
   })
 })
 
-describe('分支', () => {
-  it('创建、切换、删除；未合并的分支 git 拒绝删除', async () => {
-    const repo = await newRepo()
-    write(repo, 'a.txt')
-    await commitAll(repo, 'init')
-
-    await createBranch(repo, 'feature/中文')
-    expect((await listBranches(repo)).find((b) => b.current)?.name).toBe('feature/中文')
-    write(repo, 'b.txt')
-    await commitAll(repo, 'on feature')
-
-    await switchBranch(repo, 'main', 'local')
-    await expect(deleteBranch(repo, 'feature/中文')).rejects.toThrow('未合并')
-    expect((await listBranches(repo)).map((b) => b.name)).toContain('feature/中文')
-
-    await createBranch(repo, 'merged')
-    await switchBranch(repo, 'main', 'local')
-    await deleteBranch(repo, 'merged')
-    expect((await listBranches(repo)).map((b) => b.name)).not.toContain('merged')
-  })
-
-  it('拒绝非法和选项形式的分支名', async () => {
-    const repo = await newRepo()
-    write(repo, 'a.txt')
-    await commitAll(repo, 'init')
-    for (const bad of ['--force', '-d', 'a b', 'x..y', '']) {
-      await expect(createBranch(repo, bad)).rejects.toThrow('分支名无效')
-    }
-  })
-
-  it('工作区改动会被覆盖时切换分支失败，改动保留', async () => {
-    const repo = await newRepo()
-    write(repo, 'a.txt', '1\n')
-    await commitAll(repo, 'init')
-    await createBranch(repo, 'other')
-    write(repo, 'a.txt', '2\n')
-    await commitAll(repo, 'change')
-    await switchBranch(repo, 'main', 'local')
-
-    write(repo, 'a.txt', '本地改动\n')
-    await expect(switchBranch(repo, 'other', 'local')).rejects.toThrow(/overwritten/)
-    const diff = await readDiff(repo, { kind: 'unstaged', path: 'a.txt', origPath: null })
-    expect(diff.modified.replace(/\r/g, '')).toBe('本地改动\n')
-  })
-
-  it('从远程分支签出时创建跟踪分支', async () => {
-    const { repo, remote } = await repoWithRemote()
-    await createBranch(repo, 'topic')
-    await runGit(repo, ['push', 'origin', 'topic'])
-
-    const other = await clone(remote)
-    await switchBranch(other, 'origin/topic', 'remote')
-    const current = (await listBranches(other)).find((b) => b.current)
-    expect(current).toMatchObject({ name: 'topic', upstream: 'origin/topic' })
+describe('分支列表', () => {
+  it('列出本地和远程分支，标记当前分支和上游', async () => {
+    const { repo } = await repoWithRemote()
+    await runGit(repo, ['switch', '-c', 'feature/中文'])
+    const branches = await listBranches(repo)
+    expect(branches.find((b) => b.current)?.name).toBe('feature/中文')
+    expect(branches.find((b) => b.name === 'main')).toMatchObject({
+      kind: 'local',
+      upstream: 'origin/main'
+    })
+    expect(branches.find((b) => b.name === 'origin/main')?.kind).toBe('remote')
   })
 })
 
-describe('远程操作', () => {
-  it('push 没有上游时自动设置，fetch 和 pull 拿到新提交', async () => {
-    const remote = join(tmp, `remote-${counter++}.git`)
-    mkdirSync(remote)
-    await runGit(remote, ['init', '--bare', '-b', 'main'])
-    const repo = await newRepo()
-    await runGit(repo, ['remote', 'add', 'origin', remote])
-    write(repo, 'a.txt', '1\n')
-    await commitAll(repo, 'one')
-
-    const push = await runRemote(repo, 'push')
-    expect(push).toEqual({ ok: true, cancelled: false, message: '' })
-    expect((await readChanges(repo)).status.upstream).toBe('origin/main')
-
+describe('Fetch', () => {
+  it('只更新远程跟踪分支，落后数变化，本地分支和工作区不动', async () => {
+    const { repo, remote } = await repoWithRemote()
     const other = await clone(remote)
     write(other, 'a.txt', '2\n')
     await commitAll(other, 'two')
-    expect((await runRemote(other, 'push')).ok).toBe(true)
+    await runGit(other, ['push'])
 
-    expect((await runRemote(repo, 'fetch')).ok).toBe(true)
-    expect((await readChanges(repo)).status.behind).toBe(1)
+    write(repo, 'a.txt', '本地改动\n')
+    const headBefore = await runGit(repo, ['rev-parse', 'HEAD'])
 
     const lines: string[] = []
-    expect((await runRemote(repo, 'pull', { onProgress: (l) => lines.push(l) })).ok).toBe(true)
-    const { status } = await readChanges(repo)
-    expect(status).toMatchObject({ behind: 0, ahead: 0 })
-    expect(status.lastCommit?.subject).toBe('two')
+    const result = await runFetch(repo, { onProgress: (l) => lines.push(l) })
+    expect(result).toEqual({ ok: true, cancelled: false, message: '' })
     expect(lines.length).toBeGreaterThan(0)
-  })
 
-  it('分叉时 pull 停下，不产生合并提交；push 被拒绝且不强制', async () => {
-    const { repo, remote } = await repoWithRemote()
-    const other = await clone(remote)
-    write(other, 'b.txt')
-    await commitAll(other, 'remote side')
-    await runRemote(other, 'push')
-
-    write(repo, 'c.txt')
-    await commitAll(repo, 'local side')
-
-    const pushed = await runRemote(repo, 'push')
-    expect(pushed.ok).toBe(false)
-    expect(pushed.message).toContain('推送被拒绝')
-
-    const pull = await runRemote(repo, 'pull')
-    expect(pull.ok).toBe(false)
-    expect(pull.message).toContain('已分叉')
-    const [head] = await readLog(repo, 0, 1)
-    expect(head.subject).toBe('local side')
-    expect(head.parents).toHaveLength(1)
+    expect((await readChanges(repo)).status.behind).toBe(1)
+    expect(await runGit(repo, ['rev-parse', 'HEAD'])).toBe(headBefore)
+    expect(readFileSync(join(repo, 'a.txt'), 'utf8')).toBe('本地改动\n')
   })
 
   it('没有远程时返回错误而不是抛出', async () => {
     const repo = await newRepo()
-    expect(await runRemote(repo, 'fetch')).toMatchObject({ ok: false, message: '没有配置远程仓库' })
+    expect(await runFetch(repo)).toMatchObject({ ok: false, message: '没有配置远程仓库' })
   })
 
-  it('取消时立即返回，不等钩子的子进程结束', async () => {
+  it('取消时立即返回，不等子进程结束', async () => {
     const { repo } = await repoWithRemote()
-    write(repo, '.git/hooks/pre-push', '#!/bin/sh\nsleep 8\n')
-    write(repo, 'c.txt')
-    await commitAll(repo, 'to push')
+    // 本地传输经由 shell 启动 upload-pack，用它模拟卡住的远程
+    await runGit(repo, ['config', 'remote.origin.uploadpack', 'sleep 8; git-upload-pack'])
 
     const controller = new AbortController()
     const started = Date.now()
-    const pending = runRemote(repo, 'push', { signal: controller.signal })
+    const pending = runFetch(repo, { signal: controller.signal })
     setTimeout(() => controller.abort(), 800)
     expect(await pending).toMatchObject({ ok: false, cancelled: true })
     expect(Date.now() - started).toBeLessThan(5_000)
   })
 
-  it('准备阶段取消也生效，不会真的推送', async () => {
+  it('准备阶段取消也生效，不会真的执行', async () => {
     const { repo, remote } = await repoWithRemote()
-    write(repo, 'c.txt')
-    await commitAll(repo, 'should not reach remote')
+    const other = await clone(remote)
+    write(other, 'a.txt', '2\n')
+    await commitAll(other, 'should not arrive')
+    await runGit(other, ['push'])
 
     const controller = new AbortController()
-    const pending = runRemote(repo, 'push', { signal: controller.signal })
+    const pending = runFetch(repo, { signal: controller.signal })
     controller.abort()
     expect(await pending).toMatchObject({ cancelled: true })
-    expect((await runGit(remote, ['log', '-1', '--format=%s', 'main'])).trim()).toBe('one')
+    expect((await readChanges(repo)).status.behind).toBe(0)
   })
 
   it('已取消的信号不会启动操作', async () => {
     const { repo } = await repoWithRemote()
     const controller = new AbortController()
     controller.abort()
-    expect(await runRemote(repo, 'fetch', { signal: controller.signal })).toMatchObject({
-      cancelled: true
-    })
+    expect(await runFetch(repo, { signal: controller.signal })).toMatchObject({ cancelled: true })
   })
 })
 

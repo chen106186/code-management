@@ -5,7 +5,6 @@ import type {
   DiffContent,
   DiffTarget,
   FetchAllItem,
-  RemoteKind,
   RemoteProgress,
   RemoteResult,
   RepoChanges
@@ -15,11 +14,10 @@ import type { Snapshot } from './types'
 /** 渲染进程可调用的全部能力，通道名与方法名一一对应 */
 export interface Api {
   refresh(): Promise<Snapshot>
-  /** 以下四个方法弹出系统对话框，用户取消时返回 null */
+  /** 以下三个方法弹出系统对话框，用户取消时返回 null */
   addRoot(): Promise<Snapshot | null>
   addProject(): Promise<Snapshot | null>
   addExcluded(): Promise<Snapshot | null>
-  initGit(path: string): Promise<Snapshot | null>
   removeRoot(path: string): Promise<Snapshot>
   removeExcluded(path: string): Promise<Snapshot>
   hideProject(path: string): Promise<Snapshot>
@@ -32,17 +30,10 @@ export interface Api {
 
   getChanges(path: string): Promise<RepoChanges>
   getDiff(path: string, target: DiffTarget): Promise<DiffContent>
-  stage(path: string, files: string[]): Promise<void>
-  unstage(path: string, files: string[]): Promise<void>
-  commit(path: string, message: string): Promise<void>
   getLog(path: string, skip: number, limit: number): Promise<CommitSummary[]>
   getCommit(path: string, hash: string): Promise<CommitDetail>
   getBranches(path: string): Promise<Branch[]>
-  switchBranch(path: string, name: string, kind: Branch['kind']): Promise<void>
-  createBranch(path: string, name: string): Promise<void>
-  /** 弹出确认框，用户取消时返回 false */
-  deleteBranch(path: string, name: string): Promise<boolean>
-  runRemote(path: string, kind: RemoteKind, opId: string): Promise<RemoteResult>
+  fetchRepo(path: string, opId: string): Promise<RemoteResult>
   fetchAll(opId: string): Promise<FetchAllItem[]>
   cancelRemote(opId: string): Promise<void>
   /** 监听当前打开的仓库，传 null 停止 */
@@ -63,7 +54,6 @@ export const API_METHODS = [
   'addRoot',
   'addProject',
   'addExcluded',
-  'initGit',
   'removeRoot',
   'removeExcluded',
   'hideProject',
@@ -75,16 +65,10 @@ export const API_METHODS = [
   'openInExplorer',
   'getChanges',
   'getDiff',
-  'stage',
-  'unstage',
-  'commit',
   'getLog',
   'getCommit',
   'getBranches',
-  'switchBranch',
-  'createBranch',
-  'deleteBranch',
-  'runRemote',
+  'fetchRepo',
   'fetchAll',
   'cancelRemote',
   'watchRepo'

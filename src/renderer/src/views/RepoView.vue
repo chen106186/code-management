@@ -2,9 +2,9 @@
 import { computed, onBeforeUnmount, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  ArrowDownToLine,
+  ArrowDown,
   ArrowLeft,
-  ArrowUpFromLine,
+  ArrowUp,
   CircleAlert,
   CloudDownload,
   GitBranch,
@@ -40,8 +40,6 @@ const tabs = computed<{ id: RepoTab; label: string }[]>(() => [
   { id: 'branches', label: '分支' }
 ])
 
-const REMOTE_RUNNING = { fetch: '正在 Fetch', pull: '正在 Pull', push: '正在 Push' }
-
 const onFocus = (): void => void repo.refresh()
 onMounted(() => {
   void repo.open(repoPath.value)
@@ -69,24 +67,32 @@ onBeforeUnmount(() => {
           <GitBranch :size="13" class="shrink-0 text-zinc-400" />
           <span class="max-w-[12rem] truncate" :title="branchLabel">{{ branchLabel }}</span>
         </span>
+        <span
+          v-if="status?.ahead"
+          class="flex items-center text-xs text-teal-700 dark:text-teal-400"
+          :title="`领先上游 ${status.ahead} 个提交`"
+          data-testid="ahead"
+        >
+          <ArrowUp :size="12" />{{ status.ahead }}
+        </span>
+        <span
+          v-if="status?.behind"
+          class="flex items-center text-xs text-amber-700 dark:text-amber-400"
+          :title="`落后上游 ${status.behind} 个提交`"
+          data-testid="behind"
+        >
+          <ArrowDown :size="12" />{{ status.behind }}
+        </span>
         <button class="icon-btn" title="刷新" aria-label="刷新" @click="repo.refresh()">
           <RefreshCw :size="15" />
         </button>
-        <button class="btn" :disabled="!!repo.remote" @click="repo.runRemote('fetch')">
-          <CloudDownload :size="14" /> Fetch
-        </button>
-        <button class="btn" :disabled="!!repo.remote" @click="repo.runRemote('pull')">
-          <ArrowDownToLine :size="14" /> Pull
-          <span v-if="status?.behind" class="tabular-nums text-amber-700 dark:text-amber-400">{{ status.behind }}</span>
-        </button>
         <button
           class="btn"
-          :disabled="!!repo.remote"
-          :title="status?.upstream ? undefined : '当前分支没有上游，推送时会自动设置'"
-          @click="repo.runRemote('push')"
+          :disabled="!!repo.fetching"
+          title="从远程获取最新状态，不改动工作区和本地分支"
+          @click="repo.fetchRemote()"
         >
-          <ArrowUpFromLine :size="14" /> Push
-          <span v-if="status?.ahead" class="tabular-nums text-teal-700 dark:text-teal-400">{{ status.ahead }}</span>
+          <CloudDownload :size="14" /> Fetch
         </button>
       </div>
 
@@ -109,15 +115,15 @@ onBeforeUnmount(() => {
     </header>
 
     <div
-      v-if="repo.remote"
+      v-if="repo.fetching"
       role="status"
       data-testid="remote-progress"
       class="flex shrink-0 items-center gap-2 bg-zinc-100 px-4 py-1.5 dark:bg-zinc-800"
     >
       <LoaderCircle :size="14" class="shrink-0 animate-spin text-zinc-500" />
-      <span class="shrink-0">{{ REMOTE_RUNNING[repo.remote.kind] }}</span>
-      <span class="min-w-0 flex-1 truncate font-mono text-xs text-zinc-500 dark:text-zinc-400">{{ repo.remote.line }}</span>
-      <button class="btn h-6 text-xs" @click="repo.cancelRemote()">取消</button>
+      <span class="shrink-0">正在 Fetch</span>
+      <span class="min-w-0 flex-1 truncate font-mono text-xs text-zinc-500 dark:text-zinc-400">{{ repo.fetching.line }}</span>
+      <button class="btn h-6 text-xs" @click="repo.cancelFetch()">取消</button>
     </div>
 
     <div

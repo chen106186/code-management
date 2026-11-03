@@ -162,7 +162,6 @@ export const useProjectsStore = defineStore('projects', () => {
     addRoot: () => run(() => window.api.addRoot()),
     addProject: () => run(() => window.api.addProject()),
     addExcluded: () => run(() => window.api.addExcluded()),
-    initGit: (path: string) => run(() => window.api.initGit(path)),
     removeRoot: (path: string) => run(() => window.api.removeRoot(path)),
     removeExcluded: (path: string) => run(() => window.api.removeExcluded(path)),
     hideProject: (path: string) => run(() => window.api.hideProject(path)),

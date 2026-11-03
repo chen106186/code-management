@@ -1,6 +1,6 @@
 import { execFile, spawn } from 'child_process'
-import type { RemoteKind, RemoteResult } from '@shared/repo'
-import { GIT_BASE_ARGS, gitEnv, readStatus } from './git'
+import type { RemoteResult } from '@shared/repo'
+import { GIT_BASE_ARGS, gitEnv } from './git'
 import { listRemotes } from './gitOps'
 
 const DEFAULT_TIMEOUT_MS = 10 * 60_000
@@ -14,31 +14,12 @@ export interface RemoteOptions {
   nonInteractive?: boolean
 }
 
-async function buildArgs(cwd: string, kind: RemoteKind): Promise<string[]> {
-  const remotes = await listRemotes(cwd)
-  if (!remotes.length) throw new Error('没有配置远程仓库')
-
-  if (kind === 'fetch') return ['fetch', '--progress']
-  // 只快进：本地和远程分叉时停下来，不自动产生合并提交或冲突
-  if (kind === 'pull') return ['pull', '--ff-only', '--progress']
-
-  const status = await readStatus(cwd)
-  if (!status.branch) throw new Error('当前是游离 HEAD，无法推送')
-  if (status.upstream) return ['push', '--progress']
-  const remote = remotes.includes('origin') ? 'origin' : remotes[0]
-  return ['push', '--progress', '-u', remote, status.branch]
-}
-
 export function describeRemoteError(output: string): string {
   const lines = output.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
   const last = lines.filter((l) => !/^(hint|remote):/.test(l)).at(-1) ?? lines.at(-1) ?? '操作失败'
   const hints: [RegExp, string][] = [
-    [/Not possible to fast-forward|have diverged/i, '本地和远程已分叉，无法快进，请手动合并或变基'],
-    [/no tracking information/i, '当前分支没有上游分支'],
-    [/Updates were rejected|\[rejected\]/i, '推送被拒绝，远程有新提交，请先 Pull'],
     [/Authentication failed|could not read Username|terminal prompts disabled/i, '认证失败，请检查凭据'],
-    [/Could not resolve host|unable to access|Failed to connect|timed out/i, '无法连接远程仓库'],
-    [/would be overwritten/i, '工作区改动会被覆盖，请先提交或暂存']
+    [/Could not resolve host|unable to access|Failed to connect|timed out/i, '无法连接远程仓库']
   ]
   const hint = hints.find(([pattern]) => pattern.test(output))?.[1]
   return hint ? `${hint}（${last}）` : last
@@ -54,25 +35,23 @@ function killTree(pid: number | undefined): void {
   }
 }
 
-export async function runRemote(
-  cwd: string,
-  kind: RemoteKind,
-  options: RemoteOptions = {}
-): Promise<RemoteResult> {
+/** 只更新远程跟踪分支，不改动工作区和本地分支 */
+export async function runFetch(cwd: string, options: RemoteOptions = {}): Promise<RemoteResult> {
   const cancelled: RemoteResult = { ok: false, cancelled: true, message: '已取消' }
   if (options.signal?.aborted) return cancelled
 
-  let args: string[]
   try {
-    args = await buildArgs(cwd, kind)
+    if (!(await listRemotes(cwd)).length) {
+      return { ok: false, cancelled: false, message: '没有配置远程仓库' }
+    }
   } catch (error) {
     return { ok: false, cancelled: false, message: (error as Error).message }
   }
-  // 准备参数期间也可能被取消，此时 abort 事件已经发过，下面的监听收不到
+  // 检查期间也可能被取消，此时 abort 事件已经发过，下面的监听收不到
   if (options.signal?.aborted) return cancelled
 
   return new Promise((resolve) => {
-    const child = spawn('git', [...GIT_BASE_ARGS, ...args], {
+    const child = spawn('git', [...GIT_BASE_ARGS, 'fetch', '--progress'], {
       cwd,
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],
