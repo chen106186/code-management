@@ -1,6 +1,7 @@
-import { readdir, readFile } from 'fs/promises'
+import { access, readdir, readFile } from 'fs/promises'
 import { basename, join } from 'path'
-import type { GitStatus, Project, ScanError, Snapshot } from '@shared/types'
+import { remoteIdentity } from '@shared/remotes'
+import type { GitStatus, Project, ProjectMove, ScanError, Snapshot } from '@shared/types'
 import { readStatus } from './git'
 import { latestModified, scanRoot } from './scanner'
 import { isWithin, pathKey, type Store } from './store'
@@ -85,14 +86,66 @@ export async function inspectProject(
   }
 }
 
+function primaryRemote(git: GitStatus | null): string | null {
+  const remote = git?.remotes.find((r) => r.name === 'origin') ?? git?.remotes[0]
+  return remote ? remoteIdentity(remote.url) : null
+}
+
+/** 同一个地址有多个旧路径或多个新项目时无法判断对应关系，宁可不提示 */
+export function pairMoves(
+  sources: { from: string; remote: string }[],
+  targets: { path: string; remote: string }[]
+): { from: string; to: string }[] {
+  return sources.flatMap(({ from, remote }) => {
+    const sameSource = sources.filter((s) => s.remote === remote)
+    const sameTarget = targets.filter((t) => t.remote === remote)
+    return sameSource.length === 1 && sameTarget.length === 1 ? [{ from, to: sameTarget[0].path }] : []
+  })
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await access(path)
+    return true
+  } catch {
+    return false
+  }
+}
+
 export class ProjectService {
   /** 最近一次快照包含的路径，IPC 只接受这些路径 */
   private known = new Set<string>()
+  /** 最近一次快照给出的迁移建议，确认时只接受这些 */
+  private moves: ProjectMove[] = []
 
   constructor(private readonly store: Store) {}
 
   isKnown(path: string): boolean {
     return this.known.has(pathKey(path))
+  }
+
+  suggestedMoves(from: string[]): ProjectMove[] {
+    const keys = new Set(from.map(pathKey))
+    return this.moves.filter((move) => keys.has(pathKey(move.from)))
+  }
+
+  /** 旧路径还在的是两份副本，不算移动；已有信息的项目不覆盖 */
+  private async findMoves(projects: Project[]): Promise<ProjectMove[]> {
+    const targets = projects.flatMap((p) => {
+      const remote = primaryRemote(p.git)
+      const { favorite, tags, categoryId, remark } = this.store.metaOf(p.path)
+      const blank = !favorite && !tags.length && categoryId === null && remark === null
+      return remote && blank ? [{ path: p.path, remote }] : []
+    })
+    const remotes = new Set(targets.map((t) => t.remote))
+    const candidates = this.store.moveSources().filter((s) => remotes.has(s.remote))
+    const exists = await Promise.all(candidates.map((s) => pathExists(s.from)))
+    const sources = candidates.filter((_, index) => !exists[index])
+    return pairMoves(sources, targets).map(({ from, to }) => ({
+      from,
+      to,
+      name: this.store.metaOf(from).remark ?? (basename(from) || from)
+    }))
   }
 
   async snapshot(): Promise<Snapshot> {
@@ -121,6 +174,11 @@ export class ProjectService {
       ...this.store.metaOf(path)
     }))
 
+    this.store.trackProjects(
+      projects.filter((p) => !p.missing).map((p) => ({ path: p.path, remote: primaryRemote(p.git) }))
+    )
+    this.moves = await this.findMoves(projects)
+
     this.known = new Set([...paths.keys(), ...config.hidden.map(pathKey)])
     // 隐藏的项目只列名称，不跑 git，不拖慢刷新
     const hiddenProjects = config.hidden.map((path) => ({
@@ -128,6 +186,6 @@ export class ProjectService {
       name: basename(path) || path,
       remark: this.store.metaOf(path).remark
     }))
-    return { projects, hiddenProjects, config, scanErrors }
+    return { projects, hiddenProjects, config, scanErrors, moves: this.moves }
   }
 }

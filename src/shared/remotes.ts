@@ -18,3 +18,8 @@ export function remoteWebUrl(url: string): string | null {
 
   return null
 }
+
+/** 同一个仓库的 https 和 ssh 地址换算成同一个值，用来认出移动过的项目；本地路径返回 null */
+export function remoteIdentity(url: string): string | null {
+  return remoteWebUrl(url)?.replace(/^https?:\/\//i, '').toLowerCase() ?? null
+}

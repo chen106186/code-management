@@ -1,5 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { remoteWebUrl, sanitizeRemoteUrl } from './remotes'
+import { remoteIdentity, remoteWebUrl, sanitizeRemoteUrl } from './remotes'
+
+describe('remoteIdentity', () => {
+  it('同一个仓库的不同写法得到同一个值', () => {
+    const expected = 'github.com/owner/repo'
+    expect(remoteIdentity('https://github.com/Owner/Repo.git')).toBe(expected)
+    expect(remoteIdentity('https://token@github.com/owner/repo')).toBe(expected)
+    expect(remoteIdentity('git@github.com:owner/repo.git')).toBe(expected)
+    expect(remoteIdentity('ssh://git@github.com/owner/repo.git')).toBe(expected)
+  })
+
+  it('本地路径没有标识', () => {
+    expect(remoteIdentity('E:\\repos\\a.git')).toBeNull()
+    expect(remoteIdentity('../a.git')).toBeNull()
+  })
+})
 
 describe('sanitizeRemoteUrl', () => {
   it('去掉 http(s) 地址里的账号和令牌', () => {

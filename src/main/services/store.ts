@@ -2,13 +2,17 @@ import { randomUUID } from 'crypto'
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
 import { dirname, resolve, sep } from 'path'
 import { subtreeIds } from '@shared/categories'
-import type { Category, Config, ThemeSetting } from '@shared/types'
+import type { Category, Config, ProjectMetaValues, ThemeSetting } from '@shared/types'
 
 export interface ProjectMeta {
   favorite?: boolean
   tags?: string[]
   categoryId?: string | null
   remark?: string | null
+  /** 以下三项用于认出移动过的项目 */
+  remote?: string
+  path?: string
+  moveIgnored?: boolean
 }
 
 interface StoreData extends Config {
@@ -85,6 +89,11 @@ function emptyData(): StoreData {
 
 export function isThemeSetting(value: unknown): value is ThemeSetting {
   return value === 'system' || value === 'light' || value === 'dark'
+}
+
+/** 备注、标签、分类或收藏，有任意一项才算用户添加过信息 */
+function hasUserInfo(meta: ProjectMetaValues): boolean {
+  return meta.favorite || meta.tags.length > 0 || meta.categoryId !== null || meta.remark !== null
 }
 
 export class Store {
@@ -265,11 +274,69 @@ export class Store {
 
   setCategory(path: string, categoryId: string | null): void {
     if (categoryId !== null && !this.hasCategory(categoryId)) throw new Error('分类不存在')
-    this.data.meta[pathKey(path)] = { ...this.metaOf(path), categoryId }
+    this.patchMeta(path, { categoryId })
     this.save()
   }
 
-  metaOf(path: string): Required<ProjectMeta> {
+  /** 保留 remote 等内部字段，只改给出的字段 */
+  private patchMeta(path: string, patch: ProjectMeta): void {
+    const key = pathKey(path)
+    this.data.meta[key] = { ...this.data.meta[key], ...this.metaOf(path), ...patch }
+  }
+
+  /** 记下添加过信息的项目的 Git 地址，移动后靠它认出来；它已回到列表，之前的忽略也作废 */
+  trackProjects(items: { path: string; remote: string | null }[]): void {
+    let changed = false
+    for (const { path, remote } of items) {
+      const meta = this.data.meta[pathKey(path)]
+      if (!meta) continue
+      if (meta.moveIgnored) {
+        delete meta.moveIgnored
+        changed = true
+      }
+      if (!remote || !hasUserInfo(this.metaOf(path))) continue
+      if (meta.remote === remote && meta.path === path) continue
+      meta.remote = remote
+      meta.path = path
+      changed = true
+    }
+    if (changed) this.save()
+  }
+
+  /** 记录过 Git 地址且添加过信息的项目；路径是否还存在由调用方判断 */
+  moveSources(): { from: string; remote: string }[] {
+    return Object.entries(this.data.meta).flatMap(([key, meta]) =>
+      typeof meta.remote === 'string' && !meta.moveIgnored && hasUserInfo(this.metaOf(key))
+        ? [{ from: typeof meta.path === 'string' ? meta.path : key, remote: meta.remote }]
+        : []
+    )
+  }
+
+  /** 把旧路径的信息、手动添加和隐藏状态都转到新路径，一次写入 */
+  migrateProjects(moves: { from: string; to: string }[]): void {
+    for (const { from, to } of moves) {
+      const source = this.data.meta[pathKey(from)]
+      if (!source) continue
+      delete this.data.meta[pathKey(from)]
+      this.data.meta[pathKey(to)] = { ...source, path: normalizePath(to) }
+      Store.remove(this.data.manual, from)
+      if (this.data.hidden.some((p) => pathKey(p) === pathKey(from))) {
+        Store.remove(this.data.hidden, from)
+        Store.add(this.data.hidden, to)
+      }
+    }
+    this.save()
+  }
+
+  ignoreMoves(paths: string[]): void {
+    for (const path of paths) {
+      const meta = this.data.meta[pathKey(path)]
+      if (meta) meta.moveIgnored = true
+    }
+    this.save()
+  }
+
+  metaOf(path: string): ProjectMetaValues {
     const meta = this.data.meta[pathKey(path)]
     const categoryId =
       typeof meta?.categoryId === 'string' && this.hasCategory(meta.categoryId) ? meta.categoryId : null
@@ -280,19 +347,19 @@ export class Store {
   /** 去掉首尾空白并限制长度；留空表示清除备注 */
   setRemark(path: string, remark: string): string | null {
     const normalized = remark.trim().slice(0, MAX_REMARK_LENGTH) || null
-    this.data.meta[pathKey(path)] = { ...this.metaOf(path), remark: normalized }
+    this.patchMeta(path, { remark: normalized })
     this.save()
     return normalized
   }
 
   setFavorite(path: string, favorite: boolean): void {
-    this.data.meta[pathKey(path)] = { ...this.metaOf(path), favorite }
+    this.patchMeta(path, { favorite })
     this.save()
   }
 
   setTags(path: string, tags: string[]): string[] {
     const normalized = normalizeTags(tags)
-    this.data.meta[pathKey(path)] = { ...this.metaOf(path), tags: normalized }
+    this.patchMeta(path, { tags: normalized })
     this.save()
     return normalized
   }

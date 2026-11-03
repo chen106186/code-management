@@ -32,6 +32,9 @@ export interface Api {
   /** 弹出确认框，用户取消时返回 null */
   deleteCategory(id: string): Promise<Category[] | null>
   setProjectCategory(path: string, categoryId: string | null): Promise<void>
+  /** 按旧路径确认迁移；新路径由主进程决定，不信任页面传来的值 */
+  applyMoves(from: string[]): Promise<Snapshot>
+  dismissMoves(from: string[]): Promise<Snapshot>
   setTheme(theme: ThemeSetting): Promise<void>
   openInEditor(path: string): Promise<void>
   openInTerminal(path: string): Promise<void>
@@ -80,6 +83,8 @@ export const API_METHODS = [
   'moveCategory',
   'deleteCategory',
   'setProjectCategory',
+  'applyMoves',
+  'dismissMoves',
   'setTheme',
   'openInEditor',
   'openInTerminal',

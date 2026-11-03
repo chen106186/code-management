@@ -18,6 +18,7 @@ import {
 } from 'lucide-vue-next'
 import CategorySidebar from '@renderer/components/CategorySidebar.vue'
 import HiddenProjects from '@renderer/components/HiddenProjects.vue'
+import MoveSuggestions from '@renderer/components/MoveSuggestions.vue'
 import ProjectCard from '@renderer/components/ProjectCard.vue'
 import SettingsDrawer from '@renderer/components/SettingsDrawer.vue'
 import { FILTERS, SCOPE_HIDDEN, type FilterKind, type SortKind } from '@renderer/lib/projectList'
@@ -137,6 +138,8 @@ onBeforeUnmount(() => window.removeEventListener('focus', onFocus))
         </label>
       </div>
     </header>
+
+    <MoveSuggestions v-if="store.moves.length" />
 
     <div
       v-if="store.error"

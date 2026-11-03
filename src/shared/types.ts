@@ -78,9 +78,25 @@ export interface HiddenProject {
   remark: string | null
 }
 
+/** 用户给项目添加的信息，按路径保存 */
+export interface ProjectMetaValues {
+  favorite: boolean
+  tags: string[]
+  categoryId: string | null
+  remark: string | null
+}
+
+/** 旧路径已不存在，新路径是 Git 地址相同的项目，迁移前要用户确认 */
+export interface ProjectMove {
+  from: string
+  to: string
+  name: string
+}
+
 export interface Snapshot {
   projects: Project[]
   hiddenProjects: HiddenProject[]
   config: Config
   scanErrors: ScanError[]
+  moves: ProjectMove[]
 }

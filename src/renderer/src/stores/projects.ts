@@ -7,6 +7,7 @@ import type {
   Config,
   HiddenProject,
   Project,
+  ProjectMove,
   ScanError,
   Snapshot,
   ThemeSetting
@@ -59,6 +60,7 @@ export interface FetchSummary {
 export const useProjectsStore = defineStore('projects', () => {
   const projects = ref<Project[]>([])
   const hiddenProjects = ref<HiddenProject[]>([])
+  const moves = ref<ProjectMove[]>([])
   const config = ref<Config>({
     roots: [],
     manual: [],
@@ -153,6 +155,7 @@ export const useProjectsStore = defineStore('projects', () => {
   function apply(snapshot: Snapshot): void {
     projects.value = snapshot.projects
     hiddenProjects.value = snapshot.hiddenProjects
+    moves.value = snapshot.moves
     config.value = snapshot.config
     scanErrors.value = snapshot.scanErrors
     if (activeTag.value && !allTags.value.includes(activeTag.value)) activeTag.value = null
@@ -267,6 +270,9 @@ export const useProjectsStore = defineStore('projects', () => {
 
   return {
     projects,
+    moves,
+    applyMoves: (from: string[]) => run(() => window.api.applyMoves(from)),
+    dismissMoves: (from: string[]) => run(() => window.api.dismissMoves(from)),
     config,
     scanErrors,
     loaded,

@@ -63,6 +63,13 @@ export function registerIpc(
     return id
   }
 
+  const stringList = (values: unknown): string[] => {
+    if (!Array.isArray(values) || !values.every((v) => typeof v === 'string')) {
+      throw new Error('路径无效')
+    }
+    return values
+  }
+
   const diffTarget = (repo: string, target: DiffTarget): DiffTarget => {
     const path = assertRepoPath(repo, target?.path)
     const origPath = target.origPath === null ? null : assertRepoPath(repo, target.origPath)
@@ -188,6 +195,16 @@ export function registerIpc(
 
     setProjectCategory: async (path, categoryId) => {
       store.setCategory(known(path), categoryRef(categoryId))
+    },
+
+    applyMoves: async (from) => {
+      store.migrateProjects(projects.suggestedMoves(stringList(from)))
+      return projects.snapshot()
+    },
+
+    dismissMoves: async (from) => {
+      store.ignoreMoves(projects.suggestedMoves(stringList(from)).map((move) => move.from))
+      return projects.snapshot()
     },
 
     // 页面样式和 Monaco 都跟随 prefers-color-scheme，改 themeSource 后会一起切换

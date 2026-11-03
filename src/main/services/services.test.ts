@@ -1,9 +1,9 @@
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'fs'
+import { mkdirSync, mkdtempSync, readdirSync, renameSync, rmSync, writeFileSync } from 'fs'
 import { join, resolve } from 'path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { flattenCategories } from '@shared/categories'
 import { readStatus, runGit } from './git'
-import { inspectProject, ProjectService } from './projects'
+import { inspectProject, pairMoves, ProjectService } from './projects'
 import { scanRoot } from './scanner'
 import { isWithin, normalizeTags, Store } from './store'
 import { detectTech } from './tech'
@@ -75,6 +75,49 @@ describe('readStatus（真实 git）', () => {
 
     const status = await readStatus(repo)
     expect(status).toMatchObject({ upstream: 'origin/main', ahead: 1, behind: 0 })
+  })
+})
+
+describe('项目移动', () => {
+  it('pairMoves：地址对不上或有多个可能时不提示', () => {
+    const s = (from: string, remote: string) => ({ from, remote })
+    const t = (path: string, remote: string) => ({ path, remote })
+    expect(pairMoves([s('old', 'r')], [t('new', 'r')])).toEqual([{ from: 'old', to: 'new' }])
+    expect(pairMoves([s('old', 'r')], [t('new', 'x')])).toEqual([])
+    expect(pairMoves([s('old', 'r')], [t('a', 'r'), t('b', 'r')])).toEqual([])
+    expect(pairMoves([s('o1', 'r'), s('o2', 'r')], [t('new', 'r')])).toEqual([])
+  })
+
+  it('真实目录：改名后提示迁移，确认后信息转到新路径；旧路径还在时不提示', async () => {
+    const root = dir('moves-root')
+    const oldPath = join(root, 'old-name')
+    mkdirSync(oldPath, { recursive: true })
+    await runGit(oldPath, ['init'])
+    await runGit(oldPath, ['remote', 'add', 'origin', 'git@github.com:a/moved.git'])
+
+    const store = new Store(dir('moves-store', 'store.json'))
+    store.addRoot(root)
+    store.setRemark(oldPath, '后端')
+    const service = new ProjectService(store)
+    expect((await service.snapshot()).moves).toEqual([])
+
+    // 再克隆一份：旧路径还在，只是多了个副本
+    const copy = join(root, 'copy')
+    mkdirSync(copy)
+    await runGit(copy, ['init'])
+    await runGit(copy, ['remote', 'add', 'origin', 'https://github.com/a/moved.git'])
+    expect((await service.snapshot()).moves).toEqual([])
+    rmSync(copy, { recursive: true, force: true })
+
+    const newPath = join(root, 'new-name')
+    renameSync(oldPath, newPath)
+    const { moves } = await service.snapshot()
+    expect(moves).toEqual([{ from: oldPath, to: newPath, name: '后端' }])
+
+    store.migrateProjects(service.suggestedMoves([oldPath]))
+    const after = await service.snapshot()
+    expect(after.moves).toEqual([])
+    expect(after.projects.find((p) => p.path === newPath)?.remark).toBe('后端')
   })
 })
 
@@ -223,6 +266,41 @@ describe('Store', () => {
     store.setRemark('E:\\p', '再次设置')
     store.setFavorite('E:\\p', true)
     expect(store.metaOf('E:\\p').remark).toBe('再次设置')
+  })
+
+  it('移动：只记录添加过信息的项目，迁移带走信息、手动添加和隐藏状态', () => {
+    const file = dir('store-migrate', 'store.json')
+    const store = new Store(file)
+    store.setRemark('E:\\old', '后端')
+    store.setTags('E:\\old', ['t'])
+    store.addManual('E:\\old')
+    store.hide('E:\\old')
+    store.trackProjects([
+      { path: 'E:\\old', remote: 'github.com/a/b' },
+      { path: 'E:\\plain', remote: 'github.com/a/c' }
+    ])
+    expect(store.moveSources()).toEqual([{ from: 'E:\\old', remote: 'github.com/a/b' }])
+
+    store.setRemark('E:\\old', '后端2')
+    expect(store.moveSources()).toHaveLength(1)
+
+    store.migrateProjects([{ from: 'E:\\old', to: 'E:\\new' }])
+    const reloaded = new Store(file)
+    expect(reloaded.metaOf('E:\\new')).toMatchObject({ remark: '后端2', tags: ['t'] })
+    expect(reloaded.metaOf('E:\\old').remark).toBeNull()
+    expect(reloaded.config.manual).toEqual([])
+    expect(reloaded.config.hidden).toEqual([resolve('E:\\new')])
+    expect(reloaded.moveSources()).toEqual([{ from: resolve('E:\\new'), remote: 'github.com/a/b' }])
+  })
+
+  it('移动：忽略后不再提示，项目重新出现后恢复', () => {
+    const store = new Store(dir('store-ignore', 'store.json'))
+    store.setRemark('E:\\old', '后端')
+    store.trackProjects([{ path: 'E:\\old', remote: 'github.com/a/b' }])
+    store.ignoreMoves(['E:\\old'])
+    expect(store.moveSources()).toEqual([])
+    store.trackProjects([{ path: 'E:\\old', remote: 'github.com/a/b' }])
+    expect(store.moveSources()).toHaveLength(1)
   })
 
   it('主题：默认跟随系统，选择后重启保留，无效值退回默认', () => {
