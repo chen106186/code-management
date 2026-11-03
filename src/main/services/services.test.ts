@@ -139,7 +139,8 @@ describe('Store', () => {
     expect(reloaded.metaOf('e:\\code\\app')).toEqual({
       favorite: true,
       tags: ['a', 'b'],
-      categoryId: null
+      categoryId: null,
+      remark: null
     })
   })
 
@@ -206,6 +207,22 @@ describe('Store', () => {
     expect(store.metaOf('E:\\in-child')).toMatchObject({ categoryId: null, tags: ['留下'] })
     expect(store.metaOf('E:\\in-other').categoryId).toBe(other.id)
     expect(() => store.setCategory('E:\\x', a.id)).toThrow('分类不存在')
+  })
+
+  it('备注：去空白、限长、留空清除，重启保留，且不影响其他信息', () => {
+    const file = dir('store-remark', 'store.json')
+    const store = new Store(file)
+    store.setTags('E:\\p', ['留下'])
+    expect(store.setRemark('E:\\p', '  AI 玩具后端  ')).toBe('AI 玩具后端')
+    expect(new Store(file).metaOf('e:\\P')).toMatchObject({ remark: 'AI 玩具后端', tags: ['留下'] })
+
+    expect(store.setRemark('E:\\p', 'x'.repeat(100))).toHaveLength(60)
+    expect(store.setRemark('E:\\p', '   ')).toBeNull()
+    expect(store.metaOf('E:\\p').remark).toBeNull()
+
+    store.setRemark('E:\\p', '再次设置')
+    store.setFavorite('E:\\p', true)
+    expect(store.metaOf('E:\\p').remark).toBe('再次设置')
   })
 
   it('主题：默认跟随系统，选择后重启保留，无效值退回默认', () => {

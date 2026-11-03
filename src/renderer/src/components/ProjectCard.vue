@@ -18,6 +18,7 @@ import {
   FolderOpen,
   GitBranch,
   GitCommitHorizontal,
+  Pencil,
   Plus,
   Star,
   Tag,
@@ -71,6 +72,31 @@ const changeParts = computed(() => {
   ].filter((part) => part.count > 0)
 })
 
+const displayName = computed(() => props.project.remark ?? props.project.name)
+
+const editingRemark = ref(false)
+const remarkDraft = ref('')
+const remarkInput = ref<HTMLInputElement | null>(null)
+
+async function startRemark(): Promise<void> {
+  remarkDraft.value = props.project.remark ?? ''
+  editingRemark.value = true
+  await nextTick()
+  remarkInput.value?.focus()
+  remarkInput.value?.select()
+}
+
+function commitRemark(): void {
+  if (!editingRemark.value) return
+  editingRemark.value = false
+  const next = remarkDraft.value.trim()
+  if (next !== (props.project.remark ?? '')) void store.setRemark(props.project.path, next)
+}
+
+function cancelRemark(): void {
+  editingRemark.value = false
+}
+
 const editingTag = ref(false)
 const tagDraft = ref('')
 const tagInput = ref<HTMLInputElement | null>(null)
@@ -104,7 +130,7 @@ function removeTag(tag: string): void {
 <template>
   <article
     data-testid="project-card"
-    draggable="true"
+    :draggable="!editingRemark"
     class="group/card relative flex min-w-0 flex-col rounded-xl border border-zinc-200 bg-white transition-shadow hover:shadow-md dark:border-zinc-700/70 dark:bg-zinc-800/60"
     @dragstart="onDragStart"
   >
@@ -118,18 +144,38 @@ function removeTag(tag: string): void {
         <Folder v-else :size="18" />
       </span>
       <div class="min-w-0 flex-1">
-        <h2 class="truncate text-sm font-semibold leading-5" :title="project.name">
+        <input
+          v-if="editingRemark"
+          ref="remarkInput"
+          v-model="remarkDraft"
+          maxlength="60"
+          placeholder="项目的具体名称，留空可清除"
+          aria-label="项目备注"
+          class="field h-6 w-full px-1.5 text-xs"
+          @keydown.enter.prevent="commitRemark"
+          @keydown.esc="cancelRemark"
+          @blur="commitRemark"
+        />
+        <h2 v-else class="flex min-w-0 items-baseline gap-2 text-sm leading-5" :title="displayName">
           <button
             v-if="git"
-            class="max-w-full truncate rounded text-left hover:text-teal-700 hover:underline dark:hover:text-teal-400"
+            class="min-w-0 truncate rounded text-left font-semibold hover:text-teal-700 hover:underline dark:hover:text-teal-400"
             title="打开仓库"
             @click="openRepo"
           >
-            {{ project.name }}
+            {{ displayName }}
           </button>
-          <template v-else>{{ project.name }}</template>
+          <span v-else class="min-w-0 truncate font-semibold">{{ displayName }}</span>
+          <!-- 有备注时保留文件夹名，方便和磁盘上的目录对照 -->
+          <span
+            v-if="project.remark"
+            class="min-w-0 max-w-[50%] shrink-0 truncate text-xs text-zinc-400"
+            data-testid="project-folder-name"
+            :title="project.name"
+          >
+            {{ project.name }}
+          </span>
         </h2>
-
         <p class="truncate text-xs leading-4 text-zinc-500 dark:text-zinc-400" :title="project.path">
           {{ project.path }}
         </p>
@@ -145,9 +191,18 @@ function removeTag(tag: string): void {
         <Star :size="15" :class="project.favorite ? 'fill-amber-400 text-amber-400' : ''" />
       </button>
       <div
+        v-if="!editingRemark"
         class="absolute right-11 top-3 flex rounded-md bg-white opacity-0 shadow-sm ring-1 ring-zinc-200 transition-opacity focus-within:opacity-100 group-hover/card:opacity-100 dark:bg-zinc-800 dark:ring-zinc-700"
         data-testid="project-actions"
       >
+        <button
+          class="icon-btn"
+          :title="project.remark ? '修改备注' : '添加备注'"
+          aria-label="编辑备注"
+          @click="startRemark"
+        >
+          <Pencil :size="14" />
+        </button>
         <template v-if="!project.missing">
           <button class="icon-btn" title="用 VS Code 打开" aria-label="用 VS Code 打开" @click="store.openInEditor(project.path)">
             <Code2 :size="15" />

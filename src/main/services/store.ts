@@ -8,6 +8,7 @@ export interface ProjectMeta {
   favorite?: boolean
   tags?: string[]
   categoryId?: string | null
+  remark?: string | null
 }
 
 interface StoreData extends Config {
@@ -19,6 +20,7 @@ interface StoreData extends Config {
 const MAX_TAGS = 10
 const MAX_TAG_LENGTH = 20
 const MAX_CATEGORY_NAME_LENGTH = 40
+const MAX_REMARK_LENGTH = 60
 
 export function normalizePath(path: string): string {
   return resolve(path)
@@ -271,7 +273,16 @@ export class Store {
     const meta = this.data.meta[pathKey(path)]
     const categoryId =
       typeof meta?.categoryId === 'string' && this.hasCategory(meta.categoryId) ? meta.categoryId : null
-    return { favorite: meta?.favorite === true, tags: stringArray(meta?.tags), categoryId }
+    const remark = typeof meta?.remark === 'string' && meta.remark ? meta.remark : null
+    return { favorite: meta?.favorite === true, tags: stringArray(meta?.tags), categoryId, remark }
+  }
+
+  /** 去掉首尾空白并限制长度；留空表示清除备注 */
+  setRemark(path: string, remark: string): string | null {
+    const normalized = remark.trim().slice(0, MAX_REMARK_LENGTH) || null
+    this.data.meta[pathKey(path)] = { ...this.metaOf(path), remark: normalized }
+    this.save()
+    return normalized
   }
 
   setFavorite(path: string, favorite: boolean): void {

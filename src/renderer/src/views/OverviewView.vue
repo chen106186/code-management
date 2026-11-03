@@ -72,7 +72,7 @@ onBeforeUnmount(() => window.removeEventListener('focus', onFocus))
           <input
             v-model="store.query"
             type="search"
-            placeholder="搜索名称、路径、分支、技术栈或标签"
+            placeholder="搜索名称、备注、路径、分支、技术栈或标签"
             aria-label="搜索项目"
             class="field w-full pl-7"
           />

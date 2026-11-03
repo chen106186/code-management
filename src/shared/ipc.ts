@@ -24,6 +24,8 @@ export interface Api {
   restoreProject(path: string): Promise<Snapshot>
   setFavorite(path: string, favorite: boolean): Promise<void>
   setTags(path: string, tags: string[]): Promise<string[]>
+  /** 返回保存后的备注，留空表示清除，此时返回 null */
+  setRemark(path: string, remark: string): Promise<string | null>
   createCategory(name: string, parentId: string | null): Promise<Category[]>
   renameCategory(id: string, name: string): Promise<Category[]>
   moveCategory(id: string, parentId: string | null, beforeId: string | null): Promise<Category[]>
@@ -67,6 +69,7 @@ export const API_METHODS = [
   'restoreProject',
   'setFavorite',
   'setTags',
+  'setRemark',
   'createCategory',
   'renameCategory',
   'moveCategory',

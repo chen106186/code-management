@@ -44,7 +44,7 @@ function describeGitError(message: string): string {
 
 export async function inspectProject(
   path: string
-): Promise<Omit<Project, 'favorite' | 'tags' | 'categoryId'>> {
+): Promise<Omit<Project, 'favorite' | 'tags' | 'categoryId' | 'remark'>> {
   const base = { path, name: basename(path) || path }
 
   let names: string[]

@@ -259,6 +259,12 @@ export const useProjectsStore = defineStore('projects', () => {
         const project = find(path)
         if (project) project.categoryId = categoryId
       }),
+    setRemark: (path: string, remark: string) =>
+      guard(async () => {
+        const saved = await window.api.setRemark(path, remark)
+        const project = find(path)
+        if (project) project.remark = saved
+      }),
     setTheme: (theme: ThemeSetting) =>
       guard(async () => {
         await window.api.setTheme(theme)

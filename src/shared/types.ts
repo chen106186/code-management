@@ -37,6 +37,8 @@ export interface Project {
   tags: string[]
   /** 未分类时为 null */
   categoryId: string | null
+  /** 用户给项目起的具体名称，没有时为 null */
+  remark: string | null
 }
 
 export interface Category {

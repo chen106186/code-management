@@ -15,6 +15,7 @@ import {
 import BranchPanel from '@renderer/components/repo/BranchPanel.vue'
 import ChangesPanel from '@renderer/components/repo/ChangesPanel.vue'
 import HistoryPanel from '@renderer/components/repo/HistoryPanel.vue'
+import { useProjectsStore } from '@renderer/stores/projects'
 import { useRepoStore, type RepoTab } from '@renderer/stores/repo'
 
 const route = useRoute()
@@ -23,6 +24,8 @@ const repo = useRepoStore()
 
 const repoPath = computed(() => String(route.query.path ?? ''))
 const repoName = computed(() => repoPath.value.split(/[\\/]/).filter(Boolean).pop() ?? '')
+const projects = useProjectsStore()
+const remark = computed(() => projects.projects.find((p) => p.path === repoPath.value)?.remark ?? null)
 const status = computed(() => repo.changes?.status ?? null)
 const branchLabel = computed(() => {
   const s = status.value
@@ -60,8 +63,9 @@ onBeforeUnmount(() => {
         <button class="icon-btn -ml-1" title="返回总览" aria-label="返回总览" @click="router.push('/')">
           <ArrowLeft :size="16" />
         </button>
-        <div class="min-w-0 flex-1">
-          <h1 class="truncate text-sm font-semibold" :title="repoPath">{{ repoName }}</h1>
+        <div class="flex min-w-0 flex-1 items-baseline gap-2" :title="repoPath">
+          <h1 class="min-w-0 truncate text-sm font-semibold">{{ remark ?? repoName }}</h1>
+          <span v-if="remark" class="min-w-0 truncate text-xs text-zinc-400">{{ repoName }}</span>
         </div>
         <span v-if="status" class="flex min-w-0 items-center gap-1 font-medium" data-testid="current-branch">
           <GitBranch :size="13" class="shrink-0 text-zinc-400" />

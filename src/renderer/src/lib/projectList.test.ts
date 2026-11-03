@@ -35,6 +35,7 @@ const project = (overrides: Partial<Project> = {}): Project => ({
   favorite: false,
   tags: [],
   categoryId: null,
+  remark: null,
   ...overrides
 })
 
@@ -58,6 +59,22 @@ describe('matchesQuery', () => {
       expect(matchesQuery(p, q)).toBe(true)
     }
     expect(matchesQuery(p, '不存在')).toBe(false)
+  })
+})
+
+describe('备注', () => {
+  it('可以按备注搜索', () => {
+    expect(matchesQuery(project({ remark: 'AI 玩具后端' }), '玩具')).toBe(true)
+    expect(matchesQuery(project(), '玩具')).toBe(false)
+  })
+
+  it('按名称排序时优先用备注', () => {
+    const list = [
+      project({ name: 'aaa', remark: 'zzz' }),
+      project({ name: 'mmm' })
+    ]
+    list.sort((a, b) => compareProjects(a, b, 'name'))
+    expect(list.map((p) => p.name)).toEqual(['mmm', 'aaa'])
   })
 })
 

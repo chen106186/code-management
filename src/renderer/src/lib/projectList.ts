@@ -65,7 +65,14 @@ export function matchesFilter(project: Project, kind: FilterKind): boolean {
 export function matchesQuery(project: Project, query: string): boolean {
   const q = query.trim().toLowerCase()
   if (!q) return true
-  return [project.name, project.path, project.git?.branch ?? '', ...project.tech, ...project.tags]
+  return [
+    project.name,
+    project.remark ?? '',
+    project.path,
+    project.git?.branch ?? '',
+    ...project.tech,
+    ...project.tags
+  ]
     .join('\n')
     .toLowerCase()
     .includes(q)
@@ -74,7 +81,7 @@ export function matchesQuery(project: Project, query: string): boolean {
 /** 收藏始终排在前面 */
 export function compareProjects(a: Project, b: Project, sort: SortKind): number {
   if (a.favorite !== b.favorite) return a.favorite ? -1 : 1
-  const byName = a.name.localeCompare(b.name, 'zh-CN')
+  const byName = (a.remark ?? a.name).localeCompare(b.remark ?? b.name, 'zh-CN')
   switch (sort) {
     case 'activity':
       return (b.lastActivity ?? 0) - (a.lastActivity ?? 0) || byName

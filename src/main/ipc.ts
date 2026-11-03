@@ -145,6 +145,11 @@ export function registerIpc(
       return store.setTags(known(path), tags)
     },
 
+    setRemark: async (path, remark) => {
+      if (typeof remark !== 'string') throw new Error('备注无效')
+      return store.setRemark(known(path), remark)
+    },
+
     createCategory: async (name, parentId) => {
       store.createCategory(name, categoryRef(parentId))
       return store.categories
