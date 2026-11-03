@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import type { FetchAllItem } from '@shared/repo'
+import type { Branch, FetchAllItem } from '@shared/repo'
 import { subtreeIds } from '@shared/categories'
 import type { Category, Config, Project, ScanError, Snapshot, ThemeSetting } from '@shared/types'
 import { errorMessage } from '@renderer/lib/errors'
@@ -259,6 +259,20 @@ export const useProjectsStore = defineStore('projects', () => {
         const project = find(path)
         if (project) project.categoryId = categoryId
       }),
+    /** 不论成败都读一次状态：失败时分支没变，成功时只更新这一张卡片，不必重新扫描 */
+    switchBranch: async (path: string, branch: Branch): Promise<void> => {
+      try {
+        await window.api.switchBranch(path, branch.name, branch.kind)
+        error.value = null
+      } catch (e) {
+        error.value = errorMessage(e)
+      }
+      await guard(async () => {
+        const { status } = await window.api.getChanges(path)
+        const project = find(path)
+        if (project) project.git = status
+      })
+    },
     setRemark: (path: string, remark: string) =>
       guard(async () => {
         const saved = await window.api.setRemark(path, remark)

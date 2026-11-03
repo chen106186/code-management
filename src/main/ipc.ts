@@ -16,7 +16,8 @@ import {
   listRemotes,
   readCommit,
   readDiff,
-  readLog
+  readLog,
+  switchBranch
 } from './services/gitOps'
 import { openInEditor, openInExplorer, openInTerminal } from './services/openers'
 import { mapLimit, type ProjectService } from './services/projects'
@@ -216,6 +217,11 @@ export function registerIpc(
     getCommit: async (path, hash) => readCommit(known(path), assertHash(hash)),
 
     getBranches: async (path) => listBranches(known(path)),
+
+    switchBranch: async (path, name, kind) => {
+      const repo = known(path)
+      await queue.run(repo, () => switchBranch(repo, name, kind === 'remote' ? 'remote' : 'local'))
+    },
 
     fetchRepo: async (path, opId) => {
       const repo = known(path)

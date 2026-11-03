@@ -9,7 +9,8 @@ import {
   listBranches,
   readCommit,
   readDiff,
-  readLog
+  readLog,
+  switchBranch
 } from './gitOps'
 import { describeRemoteError, runFetch } from './remoteOps'
 import { RepoQueue } from './repoQueue'
@@ -355,6 +356,68 @@ describe('分支列表', () => {
       upstream: 'origin/main'
     })
     expect(branches.find((b) => b.name === 'origin/main')?.kind).toBe('remote')
+  })
+})
+
+describe('切换分支', () => {
+  const current = async (repo: string): Promise<string | undefined> =>
+    (await listBranches(repo)).find((b) => b.current)?.name
+
+  it('切换本地分支，含中文名；不相关的未提交改动跟着走', async () => {
+    const repo = await newRepo()
+    write(repo, 'a.txt', '1\n')
+    await commitAll(repo, 'init')
+    await runGit(repo, ['branch', 'feature/中文'])
+
+    write(repo, 'b.txt', '未跟踪\n')
+    write(repo, 'a.txt', '未提交\n')
+    await switchBranch(repo, 'feature/中文', 'local')
+
+    expect(await current(repo)).toBe('feature/中文')
+    expect(readFileSync(join(repo, 'a.txt'), 'utf8')).toBe('未提交\n')
+    expect(readFileSync(join(repo, 'b.txt'), 'utf8')).toBe('未跟踪\n')
+  })
+
+  it('会覆盖工作区改动时拒绝切换，分支和改动都不变', async () => {
+    const repo = await newRepo()
+    write(repo, 'a.txt', '1\n')
+    await commitAll(repo, 'init')
+    await runGit(repo, ['switch', '-c', 'other'])
+    write(repo, 'a.txt', '2\n')
+    await commitAll(repo, 'change')
+    await runGit(repo, ['switch', 'main'])
+
+    write(repo, 'a.txt', '本地改动\n')
+    await expect(switchBranch(repo, 'other', 'local')).rejects.toThrow('改动都还在')
+    expect(await current(repo)).toBe('main')
+    expect(readFileSync(join(repo, 'a.txt'), 'utf8')).toBe('本地改动\n')
+  })
+
+  it('远程分支签出为跟踪分支', async () => {
+    const { repo, remote } = await repoWithRemote()
+    await runGit(repo, ['switch', '-c', 'topic'])
+    await runGit(repo, ['push', 'origin', 'topic'])
+
+    const other = await clone(remote)
+    await switchBranch(other, 'origin/topic', 'remote')
+    expect((await listBranches(other)).find((b) => b.current)).toMatchObject({
+      name: 'topic',
+      upstream: 'origin/topic'
+    })
+  })
+
+  it('拒绝选项形式、非法和不存在的分支名；不会切到提交号', async () => {
+    const repo = await newRepo()
+    write(repo, 'a.txt')
+    await commitAll(repo, 'init')
+    const hash = (await runGit(repo, ['rev-parse', 'HEAD'])).trim()
+
+    for (const bad of ['--force', '-d', 'a b', 'x..y', '', 1]) {
+      await expect(switchBranch(repo, bad, 'local')).rejects.toThrow('分支名无效')
+    }
+    await expect(switchBranch(repo, '不存在', 'local')).rejects.toThrow()
+    await expect(switchBranch(repo, hash, 'local')).rejects.toThrow()
+    expect(await current(repo)).toBe('main')
   })
 })
 

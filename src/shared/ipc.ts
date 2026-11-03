@@ -42,6 +42,8 @@ export interface Api {
   getLog(path: string, skip: number, limit: number): Promise<CommitSummary[]>
   getCommit(path: string, hash: string): Promise<CommitDetail>
   getBranches(path: string): Promise<Branch[]>
+  /** 唯一会改动工作区的操作；会覆盖未提交改动时 git 拒绝并报错 */
+  switchBranch(path: string, name: string, kind: Branch['kind']): Promise<void>
   fetchRepo(path: string, opId: string): Promise<RemoteResult>
   fetchAll(opId: string): Promise<FetchAllItem[]>
   cancelRemote(opId: string): Promise<void>
@@ -84,6 +86,7 @@ export const API_METHODS = [
   'getLog',
   'getCommit',
   'getBranches',
+  'switchBranch',
   'fetchRepo',
   'fetchAll',
   'cancelRemote',

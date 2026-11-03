@@ -16,7 +16,6 @@ import {
   FilePlus,
   Folder,
   FolderOpen,
-  GitBranch,
   GitCommitHorizontal,
   Pencil,
   Plus,
@@ -28,6 +27,7 @@ import {
 } from 'lucide-vue-next'
 import { flattenCategories } from '@shared/categories'
 import type { Project } from '@shared/types'
+import BranchSwitcher from '@renderer/components/BranchSwitcher.vue'
 import TechIcon from '@renderer/components/TechIcon.vue'
 import { PROJECT_DRAG_TYPE } from '@renderer/lib/projectDrag'
 import { changeCount, formatRelative } from '@renderer/lib/projectList'
@@ -237,10 +237,7 @@ function removeTag(tag: string): void {
 
       <template v-else-if="git">
         <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <span class="flex min-w-0 items-center gap-1 font-medium text-zinc-800 dark:text-zinc-200">
-            <GitBranch :size="13" class="shrink-0 text-zinc-400" />
-            <span class="max-w-[12rem] truncate" :title="branchLabel">{{ branchLabel }}</span>
-          </span>
+          <BranchSwitcher :project="project" :label="branchLabel" />
           <span
             v-if="git.ahead"
             class="flex items-center gap-0.5 tabular-nums text-teal-700 dark:text-teal-400"

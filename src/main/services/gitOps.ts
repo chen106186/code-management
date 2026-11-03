@@ -141,6 +141,34 @@ export async function listBranches(cwd: string): Promise<Branch[]> {
   )
 }
 
+const SWITCH_TIMEOUT_MS = 5 * 60_000
+
+async function assertBranchName(cwd: string, name: unknown): Promise<string> {
+  if (typeof name !== 'string' || !name.trim() || name.startsWith('-')) {
+    throw new Error('分支名无效')
+  }
+  try {
+    await runGit(cwd, ['check-ref-format', '--branch', name])
+  } catch {
+    throw new Error(`分支名无效：${name}`)
+  }
+  return name
+}
+
+/** 不加 --force 或 --discard-changes：会覆盖工作区改动时由 git 拒绝，改动保留 */
+export async function switchBranch(cwd: string, name: unknown, kind: Branch['kind']): Promise<void> {
+  const branch = await assertBranchName(cwd, name)
+  const args = kind === 'remote' ? ['switch', '--track', branch] : ['switch', '--no-guess', branch]
+  try {
+    await runGit(cwd, args, { timeoutMs: SWITCH_TIMEOUT_MS })
+  } catch (error) {
+    if (/would be overwritten/.test((error as Error).message)) {
+      throw new Error(`工作区的改动会被覆盖，没有切换到 ${branch}，改动都还在。请先提交或暂存后再切换`)
+    }
+    throw error
+  }
+}
+
 export async function listRemotes(cwd: string): Promise<string[]> {
   return (await runGit(cwd, ['remote'])).split('\n').filter(Boolean)
 }
