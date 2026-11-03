@@ -11,6 +11,7 @@ import {
 import { subtreeIds } from '@shared/categories'
 import { remoteWebUrl } from '@shared/remotes'
 import type { DiffTarget, FetchAllItem } from '@shared/repo'
+import type { ProjectPatch } from '@shared/types'
 import { readChanges, readRemotes } from './services/git'
 import {
   assertHash,
@@ -59,10 +60,26 @@ export function registerIpc(
     return path
   }
 
+  const knownList = (paths: unknown): string[] => {
+    if (!Array.isArray(paths)) throw new Error('项目列表无效')
+    return paths.map(known)
+  }
+
   const categoryRef = (id: unknown): string | null => {
     if (id === null) return null
     if (typeof id !== 'string') throw new Error('分类无效')
     return id
+  }
+
+  const projectPatch = (patch: ProjectPatch): ProjectPatch => {
+    const result: ProjectPatch = {}
+    if (patch?.categoryId !== undefined) result.categoryId = categoryRef(patch.categoryId)
+    if (patch?.favorite !== undefined) result.favorite = patch.favorite === true
+    if (patch?.addTag !== undefined) {
+      if (typeof patch.addTag !== 'string') throw new Error('标签无效')
+      result.addTag = patch.addTag
+    }
+    return result
   }
 
   const stringList = (values: unknown): string[] => {
@@ -197,6 +214,17 @@ export function registerIpc(
 
     setProjectCategory: async (path, categoryId) => {
       store.setCategory(known(path), categoryRef(categoryId))
+    },
+
+    updateProjects: async (paths, patch) => {
+      const list = knownList(paths)
+      store.updateProjects(list, projectPatch(patch))
+      return Object.fromEntries(list.map((path) => [path, store.metaOf(path)]))
+    },
+
+    hideProjects: async (paths) => {
+      store.hideMany(knownList(paths))
+      return projects.snapshot()
     },
 
     applyMoves: async (from) => {

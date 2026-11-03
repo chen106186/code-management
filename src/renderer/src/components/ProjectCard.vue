@@ -26,8 +26,9 @@ import type { Project } from '@shared/types'
 import BranchSwitcher from '@renderer/components/BranchSwitcher.vue'
 import ProjectActions from '@renderer/components/ProjectActions.vue'
 import RemoteRow from '@renderer/components/RemoteRow.vue'
+import SelectBox from '@renderer/components/SelectBox.vue'
 import TechIcon from '@renderer/components/TechIcon.vue'
-import { PROJECT_DRAG_TYPE } from '@renderer/lib/projectDrag'
+import { startProjectDrag } from '@renderer/lib/projectDrag'
 import { branchLabel as labelOfBranch, changeCount, formatRelative } from '@renderer/lib/projectList'
 import { useRemarkEditor } from '@renderer/lib/useRemarkEditor'
 import { useProjectsStore } from '@renderer/stores/projects'
@@ -45,8 +46,7 @@ function onCategoryChange(event: Event): void {
 }
 
 function onDragStart(event: DragEvent): void {
-  event.dataTransfer?.setData(PROJECT_DRAG_TYPE, props.project.path)
-  if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
+  startProjectDrag(event, store.dragPaths(props.project.path))
 }
 
 function openRepo(): void {
@@ -113,9 +113,15 @@ function removeTag(tag: string): void {
   <article
     data-testid="project-card"
     :draggable="!editingRemark"
-    class="group/card relative flex min-w-0 flex-col rounded-xl border border-zinc-200 bg-white transition-shadow hover:shadow-md dark:border-zinc-700/70 dark:bg-zinc-800/60"
+    class="group/card relative flex min-w-0 flex-col rounded-xl border bg-white transition-shadow hover:shadow-md dark:bg-zinc-800/60"
+    :class="
+      store.selected.has(project.path)
+        ? 'border-teal-500 ring-1 ring-teal-500'
+        : 'border-zinc-200 dark:border-zinc-700/70'
+    "
     @dragstart="onDragStart"
   >
+    <SelectBox :path="project.path" :label="displayName" class="absolute left-1.5 top-1.5 z-[1]" />
     <!-- 标题：图标、名称、路径；操作按钮悬停时才出现，平时不占视线 -->
     <header class="flex items-center gap-3 px-4 pt-3.5">
       <span

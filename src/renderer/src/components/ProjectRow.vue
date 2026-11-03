@@ -5,8 +5,9 @@ import { ArrowDown, ArrowUp, CircleAlert, CircleCheck, FilePen, Folder, Star } f
 import type { Project } from '@shared/types'
 import BranchSwitcher from '@renderer/components/BranchSwitcher.vue'
 import ProjectActions from '@renderer/components/ProjectActions.vue'
+import SelectBox from '@renderer/components/SelectBox.vue'
 import TechIcon from '@renderer/components/TechIcon.vue'
-import { PROJECT_DRAG_TYPE } from '@renderer/lib/projectDrag'
+import { startProjectDrag } from '@renderer/lib/projectDrag'
 import { branchLabel, changeCount, formatRelative } from '@renderer/lib/projectList'
 import { useRemarkEditor } from '@renderer/lib/useRemarkEditor'
 import { useProjectsStore } from '@renderer/stores/projects'
@@ -31,11 +32,6 @@ const {
   cancel: cancelRemark
 } = useRemarkEditor(() => props.project)
 
-function onDragStart(event: DragEvent): void {
-  event.dataTransfer?.setData(PROJECT_DRAG_TYPE, props.project.path)
-  if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
-}
-
 function openRepo(): void {
   void router.push({ name: 'repo', query: { path: props.project.path } })
 }
@@ -45,9 +41,15 @@ function openRepo(): void {
   <li
     data-testid="project-row"
     :draggable="!editingRemark"
-    class="project-row group/card relative flex h-11 items-center gap-2.5 px-3 text-xs transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-700/30"
-    @dragstart="onDragStart"
+    class="project-row group/card relative flex h-11 items-center gap-2.5 px-3 text-xs transition-colors"
+    :class="
+      store.selected.has(project.path)
+        ? 'bg-teal-50 dark:bg-teal-900/20'
+        : 'hover:bg-zinc-50 dark:hover:bg-zinc-700/30'
+    "
+    @dragstart="startProjectDrag($event, store.dragPaths(project.path))"
   >
+    <SelectBox :path="project.path" :label="displayName" />
     <button
       class="shrink-0"
       :class="project.favorite ? '' : 'opacity-0 focus-visible:opacity-100 group-hover/card:opacity-100'"

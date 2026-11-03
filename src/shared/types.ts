@@ -86,6 +86,13 @@ export interface ProjectMetaValues {
   remark: string | null
 }
 
+/** 批量修改：只改给出的字段 */
+export interface ProjectPatch {
+  categoryId?: string | null
+  favorite?: boolean
+  addTag?: string
+}
+
 /** 旧路径已不存在，新路径是 Git 地址相同的项目，迁移前要用户确认 */
 export interface ProjectMove {
   from: string

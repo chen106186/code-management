@@ -8,6 +8,7 @@ import type {
   HiddenProject,
   Project,
   ProjectMove,
+  ProjectPatch,
   ScanError,
   Snapshot,
   ThemeSetting
@@ -148,6 +149,37 @@ export const useProjectsStore = defineStore('projects', () => {
       .sort((a, b) => compareProjects(a, b, sort.value))
   )
 
+  const selected = ref(new Set<string>())
+  /** 只算当前看得到的，避免批量操作碰到被筛选掉的项目 */
+  const selectedPaths = computed(() =>
+    visible.value.filter((p) => selected.value.has(p.path)).map((p) => p.path)
+  )
+  let selectAnchor: string | null = null
+
+  /** 按住 Shift 时选中上次点击的项目到这一项之间的全部项目 */
+  function toggleSelected(path: string, extend = false): void {
+    const next = new Set(selected.value)
+    const paths = visible.value.map((p) => p.path)
+    const from = selectAnchor === null ? -1 : paths.indexOf(selectAnchor)
+    const to = paths.indexOf(path)
+    if (extend && from >= 0 && to >= 0) {
+      paths.slice(Math.min(from, to), Math.max(from, to) + 1).forEach((p) => next.add(p))
+    } else if (!next.delete(path)) {
+      next.add(path)
+    }
+    selectAnchor = path
+    selected.value = next
+  }
+
+  function selectAllVisible(): void {
+    selected.value = new Set(visible.value.map((p) => p.path))
+  }
+
+  function clearSelection(): void {
+    selected.value = new Set()
+    selectAnchor = null
+  }
+
   let requestId = 0
   let lastRefresh = 0
 
@@ -272,10 +304,34 @@ export const useProjectsStore = defineStore('projects', () => {
     return projects.value.find((p) => p.path === path)
   }
 
+  /** 主进程按路径返回修改后的值，这里同步，不必重新扫描 */
+  const updateProjects = (paths: string[], patch: ProjectPatch): Promise<void> =>
+    guard(async () => {
+      const saved = await window.api.updateProjects(paths, patch)
+      for (const [path, meta] of Object.entries(saved)) {
+        const project = find(path)
+        if (project) Object.assign(project, meta)
+      }
+      if (activeTag.value && !allTags.value.includes(activeTag.value)) activeTag.value = null
+    })
+
   return {
     projects,
     moves,
     viewMode,
+    selected,
+    selectedPaths,
+    toggleSelected,
+    selectAllVisible,
+    clearSelection,
+    updateProjects,
+    /** 拖动已选中的项目时带上整批，否则只拖这一个 */
+    dragPaths: (path: string): string[] =>
+      selected.value.has(path) ? selectedPaths.value : [path],
+    hideProjects: async (paths: string[]): Promise<void> => {
+      await run(() => window.api.hideProjects(paths))
+      clearSelection()
+    },
     applyMoves: (from: string[]) => run(() => window.api.applyMoves(from)),
     dismissMoves: (from: string[]) => run(() => window.api.dismissMoves(from)),
     /** 返回保存的位置，取消或失败时返回 null */

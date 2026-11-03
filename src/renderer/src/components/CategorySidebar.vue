@@ -23,7 +23,7 @@ import {
   type DropPosition
 } from '@shared/categories'
 import logo from '@renderer/assets/logo.png'
-import { CATEGORY_DRAG_TYPE, PROJECT_DRAG_TYPE } from '@renderer/lib/projectDrag'
+import { CATEGORY_DRAG_TYPE, draggedProjects, PROJECT_DRAG_TYPE } from '@renderer/lib/projectDrag'
 import { SCOPE_ALL, SCOPE_HIDDEN, SCOPE_UNCATEGORIZED } from '@renderer/lib/projectList'
 import { useProjectsStore } from '@renderer/stores/projects'
 
@@ -90,11 +90,11 @@ function onDragOver(event: DragEvent, target: string): void {
 }
 
 function onDrop(event: DragEvent, categoryId: string | null): void {
-  const path = event.dataTransfer?.getData(PROJECT_DRAG_TYPE)
+  const paths = draggedProjects(event)
   dropTarget.value = null
-  if (!path) return
+  if (!paths.length) return
   event.preventDefault()
-  void store.setProjectCategory(path, categoryId)
+  void store.updateProjects(paths, { categoryId })
 }
 
 /** 行的上下四分之一是排序，中间是放进文件夹 */

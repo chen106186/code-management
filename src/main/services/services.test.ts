@@ -268,6 +268,26 @@ describe('Store', () => {
     expect(store.metaOf('E:\\p').remark).toBe('再次设置')
   })
 
+  it('批量修改：只改给出的字段，标签追加且不重复，分类不存在时全部不改', () => {
+    const file = dir('store-batch', 'store.json')
+    const store = new Store(file)
+    const a = store.createCategory('A', null)
+    store.setRemark('E:\\p1', '留下')
+    store.setTags('E:\\p1', ['旧'])
+
+    store.updateProjects(['E:\\p1', 'E:\\p2'], { categoryId: a.id, addTag: '新' })
+    store.updateProjects(['E:\\p1'], { addTag: '新', favorite: true })
+    const reloaded = new Store(file)
+    expect(reloaded.metaOf('E:\\p1')).toEqual({ remark: '留下', tags: ['旧', '新'], categoryId: a.id, favorite: true })
+    expect(reloaded.metaOf('E:\\p2')).toEqual({ remark: null, tags: ['新'], categoryId: a.id, favorite: false })
+
+    expect(() => store.updateProjects(['E:\\p3'], { categoryId: 'x' })).toThrow('分类不存在')
+    expect(store.metaOf('E:\\p3').tags).toEqual([])
+
+    store.updateProjects(['E:\\p1'], { categoryId: null })
+    expect(store.metaOf('E:\\p1').categoryId).toBeNull()
+  })
+
   it('移动：只记录添加过信息的项目，迁移带走信息、手动添加和隐藏状态', () => {
     const file = dir('store-migrate', 'store.json')
     const store = new Store(file)

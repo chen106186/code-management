@@ -15,6 +15,7 @@ import {
   Star,
   X
 } from 'lucide-vue-next'
+import BatchBar from '@renderer/components/BatchBar.vue'
 import BoardStats from '@renderer/components/BoardStats.vue'
 import CategorySidebar from '@renderer/components/CategorySidebar.vue'
 import HiddenProjects from '@renderer/components/HiddenProjects.vue'
@@ -53,13 +54,27 @@ const fetchSummaryText = computed(() => {
   return `已 Fetch ${summary.succeeded} 个仓库，${summary.failed.length} 个失败`
 })
 
+const showBatchBar = computed(
+  () => store.scope !== SCOPE_HIDDEN && store.selectedPaths.length > 0
+)
+
 const onFocus = (): void => store.refreshIfStale()
+/** 弹层和输入框自己处理 Esc，这些情况下不清空选择 */
+const onKey = (event: KeyboardEvent): void => {
+  if (event.key !== 'Escape' || settingsOpen.value) return
+  if ((event.target as Element).closest('input, select')) return
+  store.clearSelection()
+}
 onMounted(() => {
   // 从仓库页返回时状态可能已变化
   store.refreshIfStale(2000)
   window.addEventListener('focus', onFocus)
+  window.addEventListener('keydown', onKey)
 })
-onBeforeUnmount(() => window.removeEventListener('focus', onFocus))
+onBeforeUnmount(() => {
+  window.removeEventListener('focus', onFocus)
+  window.removeEventListener('keydown', onKey)
+})
 </script>
 
 <template>
@@ -167,6 +182,7 @@ onBeforeUnmount(() => window.removeEventListener('focus', onFocus))
     </header>
 
     <MoveSuggestions v-if="store.moves.length" />
+    <BatchBar v-if="showBatchBar" />
 
     <div
       v-if="store.error"

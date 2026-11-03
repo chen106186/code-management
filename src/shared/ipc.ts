@@ -9,7 +9,7 @@ import type {
   RemoteResult,
   RepoChanges
 } from './repo'
-import type { Category, Snapshot, ThemeSetting } from './types'
+import type { Category, ProjectMetaValues, ProjectPatch, Snapshot, ThemeSetting } from './types'
 
 /** 渲染进程可调用的全部能力，通道名与方法名一一对应 */
 export interface Api {
@@ -32,6 +32,9 @@ export interface Api {
   /** 弹出确认框，用户取消时返回 null */
   deleteCategory(id: string): Promise<Category[] | null>
   setProjectCategory(path: string, categoryId: string | null): Promise<void>
+  /** 批量修改项目信息，返回修改后的值，键是项目路径 */
+  updateProjects(paths: string[], patch: ProjectPatch): Promise<Record<string, ProjectMetaValues>>
+  hideProjects(paths: string[]): Promise<Snapshot>
   /** 按旧路径确认迁移；新路径由主进程决定，不信任页面传来的值 */
   applyMoves(from: string[]): Promise<Snapshot>
   dismissMoves(from: string[]): Promise<Snapshot>
@@ -87,6 +90,8 @@ export const API_METHODS = [
   'moveCategory',
   'deleteCategory',
   'setProjectCategory',
+  'updateProjects',
+  'hideProjects',
   'applyMoves',
   'dismissMoves',
   'exportConfig',

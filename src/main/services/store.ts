@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
 import { dirname, resolve, sep } from 'path'
 import { subtreeIds } from '@shared/categories'
-import type { Category, Config, ProjectMetaValues, ThemeSetting } from '@shared/types'
+import type { Category, Config, ProjectMetaValues, ProjectPatch, ThemeSetting } from '@shared/types'
 
 export interface ProjectMeta {
   favorite?: boolean
@@ -217,7 +217,11 @@ export class Store {
   }
 
   hide(path: string): void {
-    Store.add(this.data.hidden, path)
+    this.hideMany([path])
+  }
+
+  hideMany(paths: string[]): void {
+    for (const path of paths) Store.add(this.data.hidden, path)
     this.save()
   }
 
@@ -312,6 +316,20 @@ export class Store {
   private patchMeta(path: string, patch: ProjectMeta): void {
     const key = pathKey(path)
     this.data.meta[key] = { ...this.data.meta[key], ...this.metaOf(path), ...patch }
+  }
+
+  /** 批量修改只写一次文件 */
+  updateProjects(paths: string[], patch: ProjectPatch): void {
+    const { categoryId, favorite, addTag } = patch
+    if (typeof categoryId === 'string' && !this.hasCategory(categoryId)) throw new Error('分类不存在')
+    for (const path of paths) {
+      const next: ProjectMeta = {}
+      if (categoryId !== undefined) next.categoryId = categoryId
+      if (favorite !== undefined) next.favorite = favorite
+      if (addTag !== undefined) next.tags = normalizeTags([...this.metaOf(path).tags, addTag])
+      this.patchMeta(path, next)
+    }
+    this.save()
   }
 
   /** 记下添加过信息的项目的 Git 地址，移动后靠它认出来；它已回到列表，之前的忽略也作废 */
