@@ -47,6 +47,11 @@
     contain-intrinsic-size: auto 28px;
   }
 
+  .project-row {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 44px;
+  }
+
   .commit-row {
     content-visibility: auto;
     contain-intrinsic-size: auto 52px;

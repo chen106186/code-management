@@ -62,17 +62,17 @@ describe('看板统计的筛选', () => {
 
 describe('parseListPrefs', () => {
   it('读取有效值', () => {
-    const prefs = { filter: 'behind', sort: 'name', scope: 'c1', activeTag: 't' }
+    const prefs = { filter: 'behind', sort: 'name', scope: 'c1', activeTag: 't', viewMode: 'list' }
     expect(parseListPrefs(JSON.stringify(prefs))).toEqual(prefs)
   })
 
   it('损坏或无效的值退回默认，已隐藏不恢复', () => {
-    const defaults = { filter: 'all', sort: 'activity', scope: SCOPE_ALL, activeTag: null }
+    const defaults = { filter: 'all', sort: 'activity', scope: SCOPE_ALL, activeTag: null, viewMode: 'cards' }
     expect(parseListPrefs(null)).toEqual(defaults)
     expect(parseListPrefs('不是 JSON')).toEqual(defaults)
     expect(parseListPrefs('null')).toEqual(defaults)
     expect(
-      parseListPrefs(JSON.stringify({ filter: '旧', sort: 1, scope: SCOPE_HIDDEN, activeTag: 2 }))
+      parseListPrefs(JSON.stringify({ filter: '旧', sort: 1, scope: SCOPE_HIDDEN, activeTag: 2, viewMode: 'x' }))
     ).toEqual(defaults)
   })
 })

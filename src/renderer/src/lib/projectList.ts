@@ -34,6 +34,7 @@ export function countByCategory(categories: Category[], projects: Project[]): Ma
 
 export type FilterKind = 'all' | 'changed' | 'unpushed' | 'behind' | 'stale' | 'favorite' | 'nonGit'
 export type SortKind = 'activity' | 'name' | 'changes'
+export type ViewMode = 'cards' | 'list'
 
 export const FILTERS: { kind: FilterKind; label: string }[] = [
   { kind: 'all', label: '全部' },
@@ -54,6 +55,11 @@ export const STALE_MS = 90 * 86_400_000
 export function changeCount(git: GitStatus | null): number {
   if (!git) return 0
   return git.staged + git.unstaged + git.untracked + git.conflicted
+}
+
+export function branchLabel(git: GitStatus | null): string {
+  if (!git) return ''
+  return git.branch ?? `游离 ${git.head?.slice(0, 7) ?? ''}`
 }
 
 export function matchesFilter(project: Project, kind: FilterKind, now = Date.now()): boolean {
@@ -80,6 +86,7 @@ export interface ListPrefs {
   sort: SortKind
   scope: CategoryScope
   activeTag: string | null
+  viewMode: ViewMode
 }
 
 const FILTER_KINDS: readonly string[] = [...FILTERS, ...STAT_FILTERS].map((f) => f.kind)
@@ -96,7 +103,8 @@ export function parseListPrefs(text: string | null): ListPrefs {
     filter: FILTER_KINDS.includes(raw.filter as string) ? (raw.filter as FilterKind) : 'all',
     sort: raw.sort === 'name' || raw.sort === 'changes' ? raw.sort : 'activity',
     scope: typeof raw.scope === 'string' && raw.scope !== SCOPE_HIDDEN ? raw.scope : SCOPE_ALL,
-    activeTag: typeof raw.activeTag === 'string' ? raw.activeTag : null
+    activeTag: typeof raw.activeTag === 'string' ? raw.activeTag : null,
+    viewMode: raw.viewMode === 'list' ? 'list' : 'cards'
   }
 }
 

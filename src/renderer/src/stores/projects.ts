@@ -28,7 +28,8 @@ import {
   STAT_FILTERS,
   type CategoryScope,
   type FilterKind,
-  type SortKind
+  type SortKind,
+  type ViewMode
 } from '@renderer/lib/projectList'
 
 const FOCUS_REFRESH_INTERVAL = 30_000
@@ -85,11 +86,12 @@ export const useProjectsStore = defineStore('projects', () => {
   const filter = ref<FilterKind>(prefs.filter)
   const activeTag = ref<string | null>(prefs.activeTag)
   const sort = ref<SortKind>(prefs.sort)
+  const viewMode = ref<ViewMode>(prefs.viewMode)
 
   const scope = ref<CategoryScope>(prefs.scope)
   const collapsed = ref(loadCollapsed())
 
-  watch([filter, sort, scope, activeTag], () => {
+  watch([filter, sort, scope, activeTag, viewMode], () => {
     try {
       localStorage.setItem(
         LIST_PREFS_KEY,
@@ -97,7 +99,8 @@ export const useProjectsStore = defineStore('projects', () => {
           filter: filter.value,
           sort: sort.value,
           scope: scope.value,
-          activeTag: activeTag.value
+          activeTag: activeTag.value,
+          viewMode: viewMode.value
         })
       )
     } catch {
@@ -272,6 +275,7 @@ export const useProjectsStore = defineStore('projects', () => {
   return {
     projects,
     moves,
+    viewMode,
     applyMoves: (from: string[]) => run(() => window.api.applyMoves(from)),
     dismissMoves: (from: string[]) => run(() => window.api.dismissMoves(from)),
     /** 返回保存的位置，取消或失败时返回 null */

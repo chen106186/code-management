@@ -10,18 +10,13 @@ import {
   CircleDot,
   Clock,
   CloudOff,
-  Code2,
-  EyeOff,
   FilePen,
   FilePlus,
   Folder,
-  FolderOpen,
   GitCommitHorizontal,
-  Pencil,
   Plus,
   Star,
   Tag,
-  Terminal,
   TriangleAlert,
   Unlink,
   X
@@ -29,10 +24,12 @@ import {
 import { flattenCategories } from '@shared/categories'
 import type { Project } from '@shared/types'
 import BranchSwitcher from '@renderer/components/BranchSwitcher.vue'
+import ProjectActions from '@renderer/components/ProjectActions.vue'
 import RemoteRow from '@renderer/components/RemoteRow.vue'
 import TechIcon from '@renderer/components/TechIcon.vue'
 import { PROJECT_DRAG_TYPE } from '@renderer/lib/projectDrag'
-import { changeCount, formatRelative } from '@renderer/lib/projectList'
+import { branchLabel as labelOfBranch, changeCount, formatRelative } from '@renderer/lib/projectList'
+import { useRemarkEditor } from '@renderer/lib/useRemarkEditor'
 import { useProjectsStore } from '@renderer/stores/projects'
 
 const props = defineProps<{ project: Project }>()
@@ -59,10 +56,7 @@ function openRepo(): void {
 const git = computed(() => props.project.git)
 const primaryTech = computed(() => props.project.tech[0])
 const changes = computed(() => changeCount(git.value))
-const branchLabel = computed(() => {
-  if (!git.value) return ''
-  return git.value.branch ?? `游离 ${git.value.head?.slice(0, 7) ?? ''}`
-})
+const branchLabel = computed(() => labelOfBranch(git.value))
 const changeParts = computed(() => {
   const g = git.value
   if (!g) return []
@@ -76,28 +70,14 @@ const changeParts = computed(() => {
 
 const displayName = computed(() => props.project.remark ?? props.project.name)
 
-const editingRemark = ref(false)
-const remarkDraft = ref('')
-const remarkInput = ref<HTMLInputElement | null>(null)
-
-async function startRemark(): Promise<void> {
-  remarkDraft.value = props.project.remark ?? ''
-  editingRemark.value = true
-  await nextTick()
-  remarkInput.value?.focus()
-  remarkInput.value?.select()
-}
-
-function commitRemark(): void {
-  if (!editingRemark.value) return
-  editingRemark.value = false
-  const next = remarkDraft.value.trim()
-  if (next !== (props.project.remark ?? '')) void store.setRemark(props.project.path, next)
-}
-
-function cancelRemark(): void {
-  editingRemark.value = false
-}
+const {
+  editing: editingRemark,
+  draft: remarkDraft,
+  input: remarkInput,
+  start: startRemark,
+  commit: commitRemark,
+  cancel: cancelRemark
+} = useRemarkEditor(() => props.project)
 
 const editingTag = ref(false)
 const tagDraft = ref('')
@@ -192,34 +172,12 @@ function removeTag(tag: string): void {
       >
         <Star :size="15" :class="project.favorite ? 'fill-amber-400 text-amber-400' : ''" />
       </button>
-      <div
+      <ProjectActions
         v-if="!editingRemark"
-        class="absolute right-11 top-3 flex rounded-md bg-white opacity-0 shadow-sm ring-1 ring-zinc-200 transition-opacity focus-within:opacity-100 group-hover/card:opacity-100 dark:bg-zinc-800 dark:ring-zinc-700"
-        data-testid="project-actions"
-      >
-        <button
-          class="icon-btn"
-          :title="project.remark ? '修改备注' : '添加备注'"
-          aria-label="编辑备注"
-          @click="startRemark"
-        >
-          <Pencil :size="14" />
-        </button>
-        <template v-if="!project.missing">
-          <button class="icon-btn" title="用 VS Code 打开" aria-label="用 VS Code 打开" @click="store.openInEditor(project.path)">
-            <Code2 :size="15" />
-          </button>
-          <button class="icon-btn" title="在终端打开" aria-label="在终端打开" @click="store.openInTerminal(project.path)">
-            <Terminal :size="15" />
-          </button>
-          <button class="icon-btn" title="在资源管理器打开" aria-label="在资源管理器打开" @click="store.openInExplorer(project.path)">
-            <FolderOpen :size="15" />
-          </button>
-        </template>
-        <button class="icon-btn" title="从列表隐藏（不会删除文件）" aria-label="从列表隐藏" @click="store.hideProject(project.path)">
-          <EyeOff :size="15" />
-        </button>
-      </div>
+        :project="project"
+        class="absolute right-11 top-3"
+        @edit-remark="startRemark"
+      />
     </header>
 
     <!-- 状态：分支和改动一行，最后提交一行 -->

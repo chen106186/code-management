@@ -7,6 +7,7 @@ import {
   FolderMinus,
   FolderPlus,
   LayoutGrid,
+  List,
   Plus,
   RefreshCw,
   Search,
@@ -19,8 +20,9 @@ import CategorySidebar from '@renderer/components/CategorySidebar.vue'
 import HiddenProjects from '@renderer/components/HiddenProjects.vue'
 import MoveSuggestions from '@renderer/components/MoveSuggestions.vue'
 import ProjectCard from '@renderer/components/ProjectCard.vue'
+import ProjectRow from '@renderer/components/ProjectRow.vue'
 import SettingsDrawer from '@renderer/components/SettingsDrawer.vue'
-import { FILTERS, SCOPE_HIDDEN, type SortKind } from '@renderer/lib/projectList'
+import { FILTERS, SCOPE_HIDDEN, type SortKind, type ViewMode } from '@renderer/lib/projectList'
 import { useProjectsStore } from '@renderer/stores/projects'
 
 const store = useProjectsStore()
@@ -31,6 +33,11 @@ const FILTER_ICONS: Record<string, typeof Star> = {
   favorite: Star,
   nonGit: FolderMinus
 }
+
+const VIEWS: { mode: ViewMode; label: string; icon: typeof Star }[] = [
+  { mode: 'cards', label: '卡片视图', icon: LayoutGrid },
+  { mode: 'list', label: '列表视图', icon: List }
+]
 
 const SORTS: { kind: SortKind; label: string }[] = [
   { kind: 'activity', label: '最近活跃' },
@@ -135,6 +142,27 @@ onBeforeUnmount(() => window.removeEventListener('focus', onFocus))
             <option v-for="{ kind, label } in SORTS" :key="kind" :value="kind">{{ label }}</option>
           </select>
         </label>
+
+        <div role="radiogroup" aria-label="视图" class="ml-1 flex rounded-md bg-zinc-200/70 p-0.5 dark:bg-zinc-900/60">
+          <button
+            v-for="view in VIEWS"
+            :key="view.mode"
+            role="radio"
+            :aria-checked="store.viewMode === view.mode"
+            :aria-label="view.label"
+            :title="view.label"
+            :data-testid="`view-${view.mode}`"
+            class="flex h-6 w-7 items-center justify-center rounded transition-colors"
+            :class="
+              store.viewMode === view.mode
+                ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-100'
+                : 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200'
+            "
+            @click="store.viewMode = view.mode"
+          >
+            <component :is="view.icon" :size="14" />
+          </button>
+        </div>
       </div>
     </header>
 
@@ -197,6 +225,14 @@ onBeforeUnmount(() => window.removeEventListener('focus', onFocus))
             : '这里还没有项目，可以把卡片拖到左侧分类，或在卡片上选择分类'
         }}
       </p>
+
+      <ul
+        v-else-if="store.viewMode === 'list'"
+        class="divide-y divide-zinc-100 rounded-xl border border-zinc-200 bg-white dark:divide-zinc-700/50 dark:border-zinc-700/70 dark:bg-zinc-800/60"
+        data-testid="project-list"
+      >
+        <ProjectRow v-for="project in store.visible" :key="project.path" :project="project" />
+      </ul>
 
       <div
         v-else
