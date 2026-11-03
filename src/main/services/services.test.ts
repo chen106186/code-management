@@ -1,11 +1,11 @@
-import { mkdirSync, mkdtempSync, readdirSync, renameSync, rmSync, writeFileSync } from 'fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'fs'
 import { join, resolve } from 'path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { flattenCategories } from '@shared/categories'
 import { readStatus, runGit } from './git'
 import { inspectProject, pairMoves, ProjectService } from './projects'
 import { scanRoot } from './scanner'
-import { isWithin, normalizeTags, Store } from './store'
+import { isWithin, normalizeTags, parseExport, Store } from './store'
 import { detectTech } from './tech'
 
 // 放在项目内：不往系统临时目录写
@@ -301,6 +301,29 @@ describe('Store', () => {
     expect(store.moveSources()).toEqual([])
     store.trackProjects([{ path: 'E:\\old', remote: 'github.com/a/b' }])
     expect(store.moveSources()).toHaveLength(1)
+  })
+
+  it('导入导出：内容一致，先备份原配置，无效文件报错且不改配置', () => {
+    const folder = dir('store-backup')
+    mkdirSync(folder)
+    const file = join(folder, 'store.json')
+    const source = new Store(file)
+    source.addRoot('E:\\code')
+    const category = source.createCategory('A', null)
+    source.setCategory('E:\\p', category.id)
+    source.setRemark('E:\\p', '备注')
+    const exported = JSON.stringify(source.exportData())
+
+    const target = new Store(join(folder, 'other.json'))
+    target.addRoot('E:\\原来的')
+    const backup = target.replaceData(parseExport(exported))
+    expect(backup && readFileSync(backup, 'utf8')).toContain('原来的')
+    const reloaded = new Store(join(folder, 'other.json'))
+    expect(reloaded.config.roots).toEqual([resolve('E:\\code')])
+    expect(reloaded.metaOf('E:\\p')).toMatchObject({ remark: '备注', categoryId: category.id })
+
+    expect(() => parseExport('不是 JSON')).toThrow('不是有效的 JSON')
+    expect(() => parseExport('{"roots":[]}')).toThrow('不是项目代码看板导出的')
   })
 
   it('主题：默认跟随系统，选择后重启保留，无效值退回默认', () => {

@@ -1,10 +1,21 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted } from 'vue'
-import { CircleAlert, FolderMinus, FolderPlus, Trash2, X } from 'lucide-vue-next'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { CircleAlert, Download, FolderMinus, FolderPlus, Trash2, Upload, X } from 'lucide-vue-next'
 import { useProjectsStore } from '@renderer/stores/projects'
 
 const emit = defineEmits<{ close: [] }>()
 const store = useProjectsStore()
+
+const backupNotice = ref('')
+
+async function exportConfig(): Promise<void> {
+  const path = await store.exportConfig()
+  if (path) backupNotice.value = `已导出到 ${path}`
+}
+
+async function importConfig(): Promise<void> {
+  if (await store.importConfig()) backupNotice.value = '已导入，原配置备份在数据目录'
+}
 
 const onKey = (event: KeyboardEvent): void => {
   if (event.key === 'Escape') emit('close')
@@ -21,11 +32,11 @@ function errorOf(path: string): string | undefined {
   <div class="fixed inset-0 z-20 flex justify-end bg-black/30" @click.self="emit('close')">
     <aside
       role="dialog"
-      aria-label="扫描设置"
+      aria-label="设置"
       class="flex h-full w-[26rem] max-w-full flex-col gap-5 overflow-y-auto border-l border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800"
     >
       <header class="flex items-center justify-between">
-        <h2 class="text-sm font-semibold">扫描设置</h2>
+        <h2 class="text-sm font-semibold">设置</h2>
         <button class="icon-btn" title="关闭" aria-label="关闭" @click="emit('close')">
           <X :size="16" />
         </button>
@@ -100,6 +111,23 @@ function errorOf(path: string): string | undefined {
         </ul>
       </section>
 
+      <section class="space-y-2">
+        <h3 class="font-medium">备份配置</h3>
+        <p class="text-xs text-zinc-500 dark:text-zinc-400">
+          导出根目录、分类、备注、标签和收藏，可用于备份或换电脑。导入会替换当前全部配置，替换前自动备份。
+        </p>
+        <div class="flex gap-2">
+          <button class="btn h-7 text-xs" data-testid="export-config" @click="exportConfig">
+            <Upload :size="13" /> 导出
+          </button>
+          <button class="btn h-7 text-xs" data-testid="import-config" @click="importConfig">
+            <Download :size="13" /> 导入
+          </button>
+        </div>
+        <p v-if="backupNotice" role="status" class="break-all text-xs text-teal-700 dark:text-teal-400">
+          {{ backupNotice }}
+        </p>
+      </section>
     </aside>
   </div>
 </template>

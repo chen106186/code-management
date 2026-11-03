@@ -273,6 +273,28 @@ export const useProjectsStore = defineStore('projects', () => {
     moves,
     applyMoves: (from: string[]) => run(() => window.api.applyMoves(from)),
     dismissMoves: (from: string[]) => run(() => window.api.dismissMoves(from)),
+    /** 返回保存的位置，取消或失败时返回 null */
+    exportConfig: async (): Promise<string | null> => {
+      try {
+        return await window.api.exportConfig()
+      } catch (e) {
+        error.value = errorMessage(e)
+        return null
+      }
+    },
+    /** 成功返回 true */
+    importConfig: async (): Promise<boolean> => {
+      try {
+        const snapshot = await window.api.importConfig()
+        if (!snapshot) return false
+        apply(snapshot)
+        error.value = null
+        return true
+      } catch (e) {
+        error.value = errorMessage(e)
+        return false
+      }
+    },
     config,
     scanErrors,
     loaded,

@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto'
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
 import { dirname, resolve, sep } from 'path'
 import { subtreeIds } from '@shared/categories'
 import type { Category, Config, ProjectMetaValues, ThemeSetting } from '@shared/types'
@@ -20,6 +20,9 @@ interface StoreData extends Config {
   /** 以 pathKey 为键 */
   meta: Record<string, ProjectMeta>
 }
+
+/** 导出文件里的标记，避免把别的 JSON 当成配置导入 */
+const EXPORT_APP = 'code-management'
 
 const MAX_TAGS = 10
 const MAX_TAG_LENGTH = 20
@@ -91,6 +94,39 @@ export function isThemeSetting(value: unknown): value is ThemeSetting {
   return value === 'system' || value === 'light' || value === 'dark'
 }
 
+function parseMeta(value: unknown): Record<string, ProjectMeta> {
+  if (!value || typeof value !== 'object') return {}
+  const entries = Object.entries(value).filter(([, meta]) => meta && typeof meta === 'object')
+  return Object.fromEntries(entries.map(([path, meta]) => [pathKey(path), meta as ProjectMeta]))
+}
+
+function parseData(raw: Record<string, unknown>): StoreData {
+  return {
+    version: 1,
+    roots: stringArray(raw.roots),
+    manual: stringArray(raw.manual),
+    hidden: stringArray(raw.hidden),
+    excluded: stringArray(raw.excluded),
+    categories: parseCategories(raw.categories),
+    theme: isThemeSetting(raw.theme) ? raw.theme : 'system',
+    meta: parseMeta(raw.meta)
+  }
+}
+
+/** 解析导出的配置文件；不是本应用导出的文件时报错 */
+export function parseExport(text: string): StoreData {
+  let raw: unknown
+  try {
+    raw = JSON.parse(text)
+  } catch {
+    throw new Error('文件不是有效的 JSON')
+  }
+  if (!raw || typeof raw !== 'object' || (raw as { app?: unknown }).app !== EXPORT_APP) {
+    throw new Error('这不是项目代码看板导出的配置文件')
+  }
+  return parseData(raw as Record<string, unknown>)
+}
+
 /** 备注、标签、分类或收藏，有任意一项才算用户添加过信息 */
 function hasUserInfo(meta: ProjectMetaValues): boolean {
   return meta.favorite || meta.tags.length > 0 || meta.categoryId !== null || meta.remark !== null
@@ -103,6 +139,10 @@ export class Store {
     this.data = this.load()
   }
 
+  get directory(): string {
+    return dirname(this.file)
+  }
+
   private load(): StoreData {
     let text: string
     try {
@@ -111,17 +151,7 @@ export class Store {
       return emptyData()
     }
     try {
-      const raw = JSON.parse(text)
-      return {
-        version: 1,
-        roots: stringArray(raw.roots),
-        manual: stringArray(raw.manual),
-        hidden: stringArray(raw.hidden),
-        excluded: stringArray(raw.excluded),
-        categories: parseCategories(raw.categories),
-        theme: isThemeSetting(raw.theme) ? raw.theme : 'system',
-        meta: raw.meta && typeof raw.meta === 'object' ? raw.meta : {}
-      }
+      return parseData(JSON.parse(text))
     } catch {
       // 配置损坏时保留原文件以便找回，再从空配置开始
       renameSync(this.file, `${this.file}.corrupt-${Date.now()}`)
@@ -334,6 +364,22 @@ export class Store {
       if (meta) meta.moveIgnored = true
     }
     this.save()
+  }
+
+  exportData(): Record<string, unknown> {
+    return { app: EXPORT_APP, exportedAt: new Date().toISOString(), ...this.data }
+  }
+
+  /** 替换全部配置，先把当前配置备份在同一目录；返回备份文件的位置 */
+  replaceData(data: StoreData): string | null {
+    let backup: string | null = null
+    if (existsSync(this.file)) {
+      backup = `${this.file}.backup-${Date.now()}`
+      copyFileSync(this.file, backup)
+    }
+    this.data = data
+    this.save()
+    return backup
   }
 
   metaOf(path: string): ProjectMetaValues {

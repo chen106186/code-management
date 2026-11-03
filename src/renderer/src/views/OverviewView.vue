@@ -94,7 +94,7 @@ onBeforeUnmount(() => window.removeEventListener('focus', onFocus))
           <CloudDownload :size="14" /> 全部 Fetch
         </button>
         <button class="btn" @click="store.addProject()"><Plus :size="14" /> 添加项目</button>
-        <button class="btn" @click="settingsOpen = true"><Settings :size="14" /> 扫描设置</button>
+        <button class="btn" @click="settingsOpen = true"><Settings :size="14" /> 设置</button>
       </div>
 
       <h2 v-if="store.scope === SCOPE_HIDDEN" class="flex h-7 items-center gap-1.5 font-semibold">

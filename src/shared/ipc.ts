@@ -35,6 +35,10 @@ export interface Api {
   /** 按旧路径确认迁移；新路径由主进程决定，不信任页面传来的值 */
   applyMoves(from: string[]): Promise<Snapshot>
   dismissMoves(from: string[]): Promise<Snapshot>
+  /** 弹出保存对话框，返回保存的位置，用户取消时返回 null */
+  exportConfig(): Promise<string | null>
+  /** 弹出选择和确认对话框，用户取消时返回 null */
+  importConfig(): Promise<Snapshot | null>
   setTheme(theme: ThemeSetting): Promise<void>
   openInEditor(path: string): Promise<void>
   openInTerminal(path: string): Promise<void>
@@ -85,6 +89,8 @@ export const API_METHODS = [
   'setProjectCategory',
   'applyMoves',
   'dismissMoves',
+  'exportConfig',
+  'importConfig',
   'setTheme',
   'openInEditor',
   'openInTerminal',

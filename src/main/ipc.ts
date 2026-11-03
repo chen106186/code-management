@@ -1,4 +1,6 @@
 import { BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, shell } from 'electron'
+import { readFile, writeFile } from 'fs/promises'
+import { join } from 'path'
 import {
   API_METHODS,
   channelOf,
@@ -25,7 +27,7 @@ import { mapLimit, type ProjectService } from './services/projects'
 import { runFetch } from './services/remoteOps'
 import { RepoQueue } from './services/repoQueue'
 import { RepoWatcher } from './services/repoWatcher'
-import { isThemeSetting, type Store } from './services/store'
+import { isThemeSetting, parseExport, type Store } from './services/store'
 
 const FETCH_ALL_CONCURRENCY = 4
 const FETCH_ALL_TIMEOUT_MS = 60_000
@@ -204,6 +206,43 @@ export function registerIpc(
 
     dismissMoves: async (from) => {
       store.ignoreMoves(projects.suggestedMoves(stringList(from)).map((move) => move.from))
+      return projects.snapshot()
+    },
+
+    exportConfig: async () => {
+      const date = new Date().toISOString().slice(0, 10)
+      const { canceled, filePath } = await dialog.showSaveDialog(getWindow(), {
+        title: '导出配置',
+        defaultPath: join(store.directory, `项目代码看板配置-${date}.json`),
+        filters: [{ name: 'JSON', extensions: ['json'] }]
+      })
+      if (canceled || !filePath) return null
+      await writeFile(filePath, JSON.stringify(store.exportData(), null, 2), 'utf8')
+      return filePath
+    },
+
+    importConfig: async () => {
+      const window = getWindow()
+      const { canceled, filePaths } = await dialog.showOpenDialog(window, {
+        title: '导入配置',
+        defaultPath: store.directory,
+        filters: [{ name: 'JSON', extensions: ['json'] }],
+        properties: ['openFile']
+      })
+      if (canceled || !filePaths[0]) return null
+      const data = parseExport(await readFile(filePaths[0], 'utf8'))
+      const { response } = await dialog.showMessageBox(window, {
+        type: 'warning',
+        title: '导入配置',
+        message: '用这个文件替换当前全部配置？',
+        detail: `文件包含 ${data.roots.length} 个根目录、${data.categories.length} 个分类、${Object.keys(data.meta).length} 个项目的信息。当前配置会先备份到数据目录，项目文件不受影响。`,
+        buttons: ['替换', '取消'],
+        defaultId: 1,
+        cancelId: 1
+      })
+      if (response !== 0) return null
+      store.replaceData(data)
+      nativeTheme.themeSource = store.theme
       return projects.snapshot()
     },
 
