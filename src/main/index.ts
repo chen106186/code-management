@@ -19,6 +19,11 @@ try {
 
 let mainWindow: BrowserWindow | null = null
 
+/** 和页面背景色一致，避免启动和切换主题时闪一下 */
+function windowBackground(): string {
+  return nativeTheme.shouldUseDarkColors ? '#18181b' : '#fafafa'
+}
+
 function createWindow(): BrowserWindow {
   const window = new BrowserWindow({
     width: 1240,
@@ -28,7 +33,7 @@ function createWindow(): BrowserWindow {
     show: false,
     autoHideMenuBar: true,
     icon,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#18181b' : '#fafafa',
+    backgroundColor: windowBackground(),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -65,6 +70,8 @@ if (!app.requestSingleInstanceLock()) {
 
   void app.whenReady().then(() => {
     const store = new Store(join(app.getPath('userData'), 'store.json'))
+    nativeTheme.themeSource = store.theme
+    nativeTheme.on('updated', () => mainWindow?.setBackgroundColor(windowBackground()))
     registerIpc(store, new ProjectService(store), () => mainWindow!)
     mainWindow = createWindow()
 

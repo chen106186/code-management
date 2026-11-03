@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import type { FetchAllItem } from '@shared/repo'
 import { subtreeIds } from '@shared/categories'
-import type { Category, Config, Project, ScanError, Snapshot } from '@shared/types'
+import type { Category, Config, Project, ScanError, Snapshot, ThemeSetting } from '@shared/types'
 import { errorMessage } from '@renderer/lib/errors'
 import {
   compareProjects,
@@ -38,7 +38,14 @@ export interface FetchSummary {
 
 export const useProjectsStore = defineStore('projects', () => {
   const projects = ref<Project[]>([])
-  const config = ref<Config>({ roots: [], manual: [], hidden: [], excluded: [], categories: [] })
+  const config = ref<Config>({
+    roots: [],
+    manual: [],
+    hidden: [],
+    excluded: [],
+    categories: [],
+    theme: 'system'
+  })
   const scanErrors = ref<ScanError[]>([])
   const loaded = ref(false)
   const loading = ref(false)
@@ -251,6 +258,11 @@ export const useProjectsStore = defineStore('projects', () => {
         await window.api.setProjectCategory(path, categoryId)
         const project = find(path)
         if (project) project.categoryId = categoryId
+      }),
+    setTheme: (theme: ThemeSetting) =>
+      guard(async () => {
+        await window.api.setTheme(theme)
+        config.value = { ...config.value, theme }
       }),
     allTags,
     filterCounts,

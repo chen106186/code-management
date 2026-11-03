@@ -9,7 +9,7 @@ import type {
   RemoteResult,
   RepoChanges
 } from './repo'
-import type { Category, Snapshot } from './types'
+import type { Category, Snapshot, ThemeSetting } from './types'
 
 /** 渲染进程可调用的全部能力，通道名与方法名一一对应 */
 export interface Api {
@@ -30,6 +30,7 @@ export interface Api {
   /** 弹出确认框，用户取消时返回 null */
   deleteCategory(id: string): Promise<Category[] | null>
   setProjectCategory(path: string, categoryId: string | null): Promise<void>
+  setTheme(theme: ThemeSetting): Promise<void>
   openInEditor(path: string): Promise<void>
   openInTerminal(path: string): Promise<void>
   openInExplorer(path: string): Promise<void>
@@ -71,6 +72,7 @@ export const API_METHODS = [
   'moveCategory',
   'deleteCategory',
   'setProjectCategory',
+  'setTheme',
   'openInEditor',
   'openInTerminal',
   'openInExplorer',

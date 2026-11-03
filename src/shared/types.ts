@@ -46,6 +46,8 @@ export interface Category {
   parentId: string | null
 }
 
+export type ThemeSetting = 'system' | 'light' | 'dark'
+
 export interface Config {
   roots: string[]
   manual: string[]
@@ -53,6 +55,7 @@ export interface Config {
   /** 扫描时跳过的目录及其子目录，手动添加的项目不受影响 */
   excluded: string[]
   categories: Category[]
+  theme: ThemeSetting
 }
 
 export interface ScanError {

@@ -208,6 +208,19 @@ describe('Store', () => {
     expect(() => store.setCategory('E:\\x', a.id)).toThrow('分类不存在')
   })
 
+  it('主题：默认跟随系统，选择后重启保留，无效值退回默认', () => {
+    const file = dir('store-theme', 'store.json')
+    const store = new Store(file)
+    expect(store.theme).toBe('system')
+    store.setTheme('dark')
+    expect(new Store(file).config.theme).toBe('dark')
+
+    const folder = dir('store-theme2')
+    mkdirSync(folder)
+    writeFileSync(join(folder, 'store.json'), JSON.stringify({ theme: '紫色' }))
+    expect(new Store(join(folder, 'store.json')).theme).toBe('system')
+  })
+
   it('分类：同级排序，顺序重启后保留', () => {
     const file = dir('store-move', 'store.json')
     const store = new Store(file)

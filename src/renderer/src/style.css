@@ -9,6 +9,11 @@
     height: 100%;
   }
 
+  /* 让滚动条和下拉菜单这些浏览器原生控件也跟随主题 */
+  html {
+    color-scheme: light dark;
+  }
+
   body {
     @apply bg-zinc-50 text-zinc-900 antialiased dark:bg-zinc-900 dark:text-zinc-100;
     font-family:

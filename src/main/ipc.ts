@@ -1,4 +1,4 @@
-import { BrowserWindow, dialog, ipcMain } from 'electron'
+import { BrowserWindow, dialog, ipcMain, nativeTheme } from 'electron'
 import {
   API_METHODS,
   channelOf,
@@ -23,7 +23,7 @@ import { mapLimit, type ProjectService } from './services/projects'
 import { runFetch } from './services/remoteOps'
 import { RepoQueue } from './services/repoQueue'
 import { RepoWatcher } from './services/repoWatcher'
-import type { Store } from './services/store'
+import { isThemeSetting, type Store } from './services/store'
 
 const FETCH_ALL_CONCURRENCY = 4
 const FETCH_ALL_TIMEOUT_MS = 60_000
@@ -181,6 +181,13 @@ export function registerIpc(
 
     setProjectCategory: async (path, categoryId) => {
       store.setCategory(known(path), categoryRef(categoryId))
+    },
+
+    // 页面样式和 Monaco 都跟随 prefers-color-scheme，改 themeSource 后会一起切换
+    setTheme: async (theme) => {
+      if (!isThemeSetting(theme)) throw new Error('主题无效')
+      store.setTheme(theme)
+      nativeTheme.themeSource = theme
     },
 
     openInEditor: (path) => openInEditor(known(path)),

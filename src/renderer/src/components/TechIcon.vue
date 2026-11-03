@@ -62,7 +62,7 @@ const fill = computed(() => {
     :height="size ?? 12"
     viewBox="0 0 24 24"
     :fill="fill"
-    class="shrink-0"
+    class="shrink-0 dark:brightness-150"
     aria-hidden="true"
   >
     <path :d="icon.path" />

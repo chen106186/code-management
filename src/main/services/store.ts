@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto'
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
 import { dirname, resolve, sep } from 'path'
 import { subtreeIds } from '@shared/categories'
-import type { Category, Config } from '@shared/types'
+import type { Category, Config, ThemeSetting } from '@shared/types'
 
 export interface ProjectMeta {
   favorite?: boolean
@@ -69,7 +69,20 @@ function parseCategories(value: unknown): Category[] {
 }
 
 function emptyData(): StoreData {
-  return { version: 1, roots: [], manual: [], hidden: [], excluded: [], categories: [], meta: {} }
+  return {
+    version: 1,
+    roots: [],
+    manual: [],
+    hidden: [],
+    excluded: [],
+    categories: [],
+    theme: 'system',
+    meta: {}
+  }
+}
+
+export function isThemeSetting(value: unknown): value is ThemeSetting {
+  return value === 'system' || value === 'light' || value === 'dark'
 }
 
 export class Store {
@@ -95,6 +108,7 @@ export class Store {
         hidden: stringArray(raw.hidden),
         excluded: stringArray(raw.excluded),
         categories: parseCategories(raw.categories),
+        theme: isThemeSetting(raw.theme) ? raw.theme : 'system',
         meta: raw.meta && typeof raw.meta === 'object' ? raw.meta : {}
       }
     } catch {
@@ -118,7 +132,8 @@ export class Store {
       manual: [...manual],
       hidden: [...hidden],
       excluded: [...excluded],
-      categories: this.categories
+      categories: this.categories,
+      theme: this.data.theme
     }
   }
 
@@ -167,6 +182,15 @@ export class Store {
 
   restore(path: string): void {
     Store.remove(this.data.hidden, path)
+    this.save()
+  }
+
+  get theme(): ThemeSetting {
+    return this.data.theme
+  }
+
+  setTheme(theme: ThemeSetting): void {
+    this.data.theme = theme
     this.save()
   }
 

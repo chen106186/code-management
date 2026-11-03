@@ -7,9 +7,13 @@ import {
   FolderPlus,
   Inbox,
   Layers,
+  Monitor,
+  Moon,
   Pencil,
+  Sun,
   Trash2
 } from 'lucide-vue-next'
+import type { ThemeSetting } from '@shared/types'
 import {
   flattenCategories,
   resolveDrop,
@@ -23,6 +27,12 @@ import { SCOPE_ALL, SCOPE_UNCATEGORIZED } from '@renderer/lib/projectList'
 import { useProjectsStore } from '@renderer/stores/projects'
 
 const store = useProjectsStore()
+
+const THEMES: { value: ThemeSetting; label: string; title: string; icon: typeof Sun }[] = [
+  { value: 'system', label: '系统', title: '跟随系统', icon: Monitor },
+  { value: 'light', label: '浅色', title: '浅色模式', icon: Sun },
+  { value: 'dark', label: '深色', title: '深色模式', icon: Moon }
+]
 
 const INDENT_PX = 14
 const BASE_PADDING_PX = 8
@@ -386,5 +396,31 @@ const rowClass = (scope: string): string =>
         新建分类后，把项目卡片拖进来，或在卡片上选择分类。
       </p>
     </nav>
+
+    <footer class="shrink-0 border-t border-zinc-200 p-2 dark:border-zinc-700/70">
+      <div
+        role="radiogroup"
+        aria-label="外观"
+        class="flex rounded-lg bg-zinc-200/70 p-0.5 dark:bg-zinc-900/60"
+      >
+        <button
+          v-for="theme in THEMES"
+          :key="theme.value"
+          role="radio"
+          :aria-checked="store.config.theme === theme.value"
+          :title="theme.title"
+          class="flex h-7 flex-1 items-center justify-center gap-1 rounded-md text-xs transition-colors"
+          :class="
+            store.config.theme === theme.value
+              ? 'bg-white font-medium text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-100'
+              : 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200'
+          "
+          @click="store.setTheme(theme.value)"
+        >
+          <component :is="theme.icon" :size="13" />
+          {{ theme.label }}
+        </button>
+      </div>
+    </footer>
   </aside>
 </template>
