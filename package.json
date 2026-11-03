@@ -1,7 +1,7 @@
 {
   "name": "code-management",
   "version": "0.1.0",
-  "description": "本地代码管理客户端",
+  "description": "项目代码看板",
   "main": "./out/main/index.js",
   "author": "chenng",
   "private": true,
@@ -35,7 +35,7 @@
   },
   "build": {
     "appId": "com.chenng.code-management",
-    "productName": "代码管理",
+    "productName": "项目代码看板",
     "executableName": "code-management",
     "artifactName": "code-management-${version}-setup.${ext}",
     "directories": {

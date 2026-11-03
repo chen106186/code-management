@@ -207,7 +207,7 @@ const rowClass = (scope: string): string =>
   >
     <header class="flex h-[57px] shrink-0 items-center gap-2 px-3">
       <img :src="logo" alt="" class="h-6 w-6" />
-      <h1 class="truncate text-sm font-semibold">代码管理</h1>
+      <h1 class="truncate text-sm font-semibold">项目代码看板</h1>
     </header>
 
     <nav class="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
