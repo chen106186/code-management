@@ -1,22 +1,37 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
+  ArrowUpDown,
+  ArrowUpFromLine,
   CircleAlert,
   CloudDownload,
+  FilePen,
+  FolderMinus,
   FolderPlus,
+  LayoutGrid,
   Plus,
   RefreshCw,
   Search,
   Settings,
+  Star,
   X
 } from 'lucide-vue-next'
+import CategorySidebar from '@renderer/components/CategorySidebar.vue'
 import ProjectCard from '@renderer/components/ProjectCard.vue'
 import SettingsDrawer from '@renderer/components/SettingsDrawer.vue'
-import { FILTERS, type SortKind } from '@renderer/lib/projectList'
+import { FILTERS, type FilterKind, type SortKind } from '@renderer/lib/projectList'
 import { useProjectsStore } from '@renderer/stores/projects'
 
 const store = useProjectsStore()
 const settingsOpen = ref(false)
+
+const FILTER_ICONS: Record<FilterKind, typeof Star> = {
+  all: LayoutGrid,
+  changed: FilePen,
+  unpushed: ArrowUpFromLine,
+  favorite: Star,
+  nonGit: FolderMinus
+}
 
 const SORTS: { kind: SortKind; label: string }[] = [
   { kind: 'activity', label: '最近活跃' },
@@ -42,12 +57,13 @@ onBeforeUnmount(() => window.removeEventListener('focus', onFocus))
 </script>
 
 <template>
-  <div class="flex h-full flex-col">
+  <div class="flex h-full">
+    <CategorySidebar />
+    <div class="flex min-w-0 flex-1 flex-col">
     <header
       class="flex shrink-0 flex-col gap-2.5 border-b border-zinc-200 bg-white px-4 py-3 dark:border-zinc-700/70 dark:bg-zinc-800/40"
     >
       <div class="flex items-center gap-2">
-        <h1 class="mr-2 shrink-0 text-sm font-semibold">代码管理</h1>
         <label class="relative min-w-0 flex-1">
           <Search
             :size="14"
@@ -83,7 +99,7 @@ onBeforeUnmount(() => window.removeEventListener('focus', onFocus))
         <button
           v-for="{ kind, label } in FILTERS"
           :key="kind"
-          class="rounded-md px-2 py-1 transition-colors"
+          class="inline-flex items-center gap-1 rounded-md px-2 py-1 transition-colors"
           :class="
             store.filter === kind
               ? 'bg-zinc-800 text-white dark:bg-zinc-200 dark:text-zinc-900'
@@ -92,8 +108,9 @@ onBeforeUnmount(() => window.removeEventListener('focus', onFocus))
           :aria-pressed="store.filter === kind"
           @click="store.filter = kind"
         >
+          <component :is="FILTER_ICONS[kind]" :size="13" />
           {{ label }}
-          <span class="ml-0.5 tabular-nums opacity-60">{{ store.filterCounts[kind] }}</span>
+          <span class="tabular-nums opacity-60">{{ store.filterCounts[kind] }}</span>
         </button>
 
         <select
@@ -107,7 +124,8 @@ onBeforeUnmount(() => window.removeEventListener('focus', onFocus))
         </select>
 
         <label class="ml-auto flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400">
-          排序
+          <ArrowUpDown :size="13" />
+          <span class="sr-only">排序</span>
           <select v-model="store.sort" class="field h-7">
             <option v-for="{ kind, label } in SORTS" :key="kind" :value="kind">{{ label }}</option>
           </select>
@@ -164,7 +182,11 @@ onBeforeUnmount(() => window.removeEventListener('focus', onFocus))
       </div>
 
       <p v-else-if="!store.visible.length" class="py-16 text-center text-zinc-500">
-        没有符合条件的项目
+        {{
+          store.scopedProjects.length
+            ? '没有符合条件的项目'
+            : '这里还没有项目，可以把卡片拖到左侧分类，或在卡片上选择分类'
+        }}
       </p>
 
       <div
@@ -175,6 +197,7 @@ onBeforeUnmount(() => window.removeEventListener('focus', onFocus))
         <ProjectCard v-for="project in store.visible" :key="project.path" :project="project" />
       </div>
     </main>
+    </div>
 
     <SettingsDrawer v-if="settingsOpen" @close="settingsOpen = false" />
   </div>

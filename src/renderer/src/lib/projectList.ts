@@ -1,4 +1,35 @@
-import type { GitStatus, Project } from '@shared/types'
+import type { Category, GitStatus, Project } from '@shared/types'
+
+/** 左侧选中的范围：全部、未分类，或某个分类的 id */
+export type CategoryScope = string
+export const SCOPE_ALL = 'all'
+export const SCOPE_UNCATEGORIZED = 'uncategorized'
+
+export function matchesCategory(
+  project: Project,
+  scope: CategoryScope,
+  scopeIds: ReadonlySet<string>
+): boolean {
+  if (scope === SCOPE_ALL) return true
+  if (scope === SCOPE_UNCATEGORIZED) return project.categoryId === null
+  return project.categoryId !== null && scopeIds.has(project.categoryId)
+}
+
+/** 每个分类的项目数，子分类的项目也计入各级父分类 */
+export function countByCategory(categories: Category[], projects: Project[]): Map<string, number> {
+  const parents = new Map(categories.map((c) => [c.id, c.parentId]))
+  const counts = new Map<string, number>()
+  for (const project of projects) {
+    const seen = new Set<string>()
+    let current = project.categoryId
+    while (current && !seen.has(current)) {
+      seen.add(current)
+      counts.set(current, (counts.get(current) ?? 0) + 1)
+      current = parents.get(current) ?? null
+    }
+  }
+  return counts
+}
 
 export type FilterKind = 'all' | 'changed' | 'unpushed' | 'favorite' | 'nonGit'
 export type SortKind = 'activity' | 'name' | 'changes'

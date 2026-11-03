@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'fs'
 import { join, resolve } from 'path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { flattenCategories } from '@shared/categories'
 import { readStatus, runGit } from './git'
 import { inspectProject, ProjectService } from './projects'
 import { scanRoot } from './scanner'
@@ -135,7 +136,11 @@ describe('Store', () => {
 
     const reloaded = new Store(file)
     expect(reloaded.config.roots).toEqual(['E:\\Code'])
-    expect(reloaded.metaOf('e:\\code\\app')).toEqual({ favorite: true, tags: ['a', 'b'] })
+    expect(reloaded.metaOf('e:\\code\\app')).toEqual({
+      favorite: true,
+      tags: ['a', 'b'],
+      categoryId: null
+    })
   })
 
   it('配置损坏时保留原文件并从空配置开始', () => {
@@ -154,6 +159,140 @@ describe('Store', () => {
     store.addManual('E:\\p')
     expect(store.config.hidden).toEqual([])
     expect(store.config.manual).toEqual(['E:\\p'])
+  })
+
+  it('分类：多层级创建、重启后保留、项目归类', () => {
+    const file = dir('store-cat', 'store.json')
+    const store = new Store(file)
+    const product = store.createCategory(' 产品A ', null)
+    const front = store.createCategory('前端', product.id)
+    const admin = store.createCategory('管理后台', front.id)
+    expect(product.name).toBe('产品A')
+    store.setCategory('E:\\p', admin.id)
+    store.setFavorite('E:\\p', true)
+
+    const reloaded = new Store(file)
+    expect(reloaded.categories.map((c) => c.parentId)).toEqual([null, product.id, front.id])
+    expect(reloaded.metaOf('e:\\P')).toMatchObject({ categoryId: admin.id, favorite: true })
+  })
+
+  it('分类：名称校验，同一层不能重名，不同层可以', () => {
+    const store = new Store(dir('store-cat2', 'store.json'))
+    const a = store.createCategory('前端', null)
+    const b = store.createCategory('后端', null)
+    expect(() => store.createCategory('  ', null)).toThrow('不能为空')
+    expect(() => store.createCategory('前端', null)).toThrow('已有分类')
+    expect(() => store.createCategory('x', '不存在')).toThrow('上级分类不存在')
+    expect(store.createCategory('前端', b.id).parentId).toBe(b.id)
+    expect(() => store.renameCategory(b.id, '前端')).toThrow('已有分类')
+    store.renameCategory(a.id, '前端')
+    store.renameCategory(b.id, '服务端')
+    expect(store.categories.find((c) => c.id === b.id)?.name).toBe('服务端')
+  })
+
+  it('分类：删除时带上子孙，只清空这些分类里的项目', () => {
+    const store = new Store(dir('store-cat3', 'store.json'))
+    const a = store.createCategory('A', null)
+    const child = store.createCategory('A1', a.id)
+    const grandchild = store.createCategory('A11', child.id)
+    const other = store.createCategory('B', null)
+    store.setCategory('E:\\in-child', grandchild.id)
+    store.setCategory('E:\\in-other', other.id)
+    store.setTags('E:\\in-child', ['留下'])
+
+    store.deleteCategory(a.id)
+
+    expect(store.categories.map((c) => c.name)).toEqual(['B'])
+    expect(store.metaOf('E:\\in-child')).toMatchObject({ categoryId: null, tags: ['留下'] })
+    expect(store.metaOf('E:\\in-other').categoryId).toBe(other.id)
+    expect(() => store.setCategory('E:\\x', a.id)).toThrow('分类不存在')
+  })
+
+  it('分类：同级排序，顺序重启后保留', () => {
+    const file = dir('store-move', 'store.json')
+    const store = new Store(file)
+    const a = store.createCategory('A', null)
+    const b = store.createCategory('B', null)
+    const c = store.createCategory('C', null)
+    const order = (s: Store): string[] => s.categories.map((x) => x.name)
+
+    store.moveCategory(c.id, null, a.id)
+    expect(order(store)).toEqual(['C', 'A', 'B'])
+    store.moveCategory(c.id, null, null)
+    expect(order(store)).toEqual(['A', 'B', 'C'])
+    store.moveCategory(a.id, null, c.id)
+    expect(order(store)).toEqual(['B', 'A', 'C'])
+    store.moveCategory(a.id, null, a.id)
+    expect(order(store)).toEqual(['B', 'A', 'C'])
+    expect(b.parentId).toBeNull()
+
+    expect(order(new Store(file))).toEqual(['B', 'A', 'C'])
+  })
+
+  it('分类：移到其他文件夹，子孙跟着走，项目归属不变', () => {
+    const store = new Store(dir('store-move2', 'store.json'))
+    const a = store.createCategory('A', null)
+    const a1 = store.createCategory('A1', a.id)
+    const a11 = store.createCategory('A11', a1.id)
+    const b = store.createCategory('B', null)
+    const b1 = store.createCategory('B1', b.id)
+    store.setCategory('E:\\p', a11.id)
+
+    store.moveCategory(a1.id, b.id, b1.id)
+
+    expect(flattenCategories(store.categories).map((r) => [r.category.name, r.depth])).toEqual([
+      ['A', 0],
+      ['B', 0],
+      ['A1', 1],
+      ['A11', 2],
+      ['B1', 1]
+    ])
+    expect(store.metaOf('E:\\p').categoryId).toBe(a11.id)
+
+    store.moveCategory(a11.id, null, null)
+    expect(store.categories.find((c) => c.id === a11.id)?.parentId).toBeNull()
+  })
+
+  it('分类：拒绝移到自身或子孙下、目标不存在和同名', () => {
+    const store = new Store(dir('store-move3', 'store.json'))
+    const a = store.createCategory('A', null)
+    const a1 = store.createCategory('同名', a.id)
+    const a11 = store.createCategory('A11', a1.id)
+    const b = store.createCategory('B', null)
+    store.createCategory('同名', b.id)
+    const before = JSON.stringify(store.categories)
+
+    expect(() => store.moveCategory(a.id, a.id, null)).toThrow('子分类')
+    expect(() => store.moveCategory(a.id, a11.id, null)).toThrow('子分类')
+    expect(() => store.moveCategory('无', null, null)).toThrow('分类不存在')
+    expect(() => store.moveCategory(a.id, '无', null)).toThrow('目标分类不存在')
+    expect(() => store.moveCategory(a.id, null, a1.id)).toThrow('目标位置不存在')
+    expect(() => store.moveCategory(a1.id, b.id, null)).toThrow('已有分类')
+    expect(JSON.stringify(store.categories)).toBe(before)
+  })
+
+  it('分类：配置里的脏数据不影响读取', () => {
+    const folder = dir('store-cat4')
+    mkdirSync(folder)
+    const file = join(folder, 'store.json')
+    writeFileSync(
+      file,
+      JSON.stringify({
+        categories: [
+          { id: 'a', name: 'A', parentId: '已删除' },
+          { id: 'b', name: 'B', parentId: 'b' },
+          { name: '缺 id' },
+          null
+        ],
+        meta: { 'e:\\p': { categoryId: '已删除' } }
+      })
+    )
+    const store = new Store(file)
+    expect(store.categories).toEqual([
+      { id: 'a', name: 'A', parentId: null },
+      { id: 'b', name: 'B', parentId: null }
+    ])
+    expect(store.metaOf('E:\\p').categoryId).toBeNull()
   })
 
   it('isWithin 按路径段比较，不区分大小写', () => {

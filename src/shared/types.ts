@@ -35,6 +35,15 @@ export interface Project {
   lastActivity: number | null
   favorite: boolean
   tags: string[]
+  /** 未分类时为 null */
+  categoryId: string | null
+}
+
+export interface Category {
+  id: string
+  name: string
+  /** 顶层分类为 null */
+  parentId: string | null
 }
 
 export interface Config {
@@ -43,6 +52,7 @@ export interface Config {
   hidden: string[]
   /** 扫描时跳过的目录及其子目录，手动添加的项目不受影响 */
   excluded: string[]
+  categories: Category[]
 }
 
 export interface ScanError {

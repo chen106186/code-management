@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { GitStatus, Project } from '@shared/types'
-import { compareProjects, formatRelative, matchesFilter, matchesQuery } from './projectList'
+import {
+  compareProjects,
+  countByCategory,
+  formatRelative,
+  matchesCategory,
+  matchesFilter,
+  matchesQuery
+} from './projectList'
 
 const git = (overrides: Partial<GitStatus> = {}): GitStatus => ({
   branch: 'main',
@@ -27,6 +34,7 @@ const project = (overrides: Partial<Project> = {}): Project => ({
   lastActivity: 0,
   favorite: false,
   tags: [],
+  categoryId: null,
   ...overrides
 })
 
@@ -68,6 +76,39 @@ describe('compareProjects', () => {
     const list = [project({ name: 'none', lastActivity: null }), project({ name: 'has', lastActivity: 5 })]
     list.sort((a, b) => compareProjects(a, b, 'activity'))
     expect(list[0].name).toBe('has')
+  })
+})
+
+describe('分类筛选', () => {
+  const categories = [
+    { id: 'a', name: 'A', parentId: null },
+    { id: 'a1', name: 'A1', parentId: 'a' },
+    { id: 'b', name: 'B', parentId: null }
+  ]
+
+  it('选中父分类时包含子分类的项目，未分类只含未归类的', () => {
+    const inChild = project({ categoryId: 'a1' })
+    const none = project()
+    const a = new Set(['a', 'a1'])
+    expect(matchesCategory(inChild, 'all', a)).toBe(true)
+    expect(matchesCategory(none, 'all', a)).toBe(true)
+    expect(matchesCategory(inChild, 'a', a)).toBe(true)
+    expect(matchesCategory(none, 'a', a)).toBe(false)
+    expect(matchesCategory(inChild, 'b', new Set(['b']))).toBe(false)
+    expect(matchesCategory(none, 'uncategorized', a)).toBe(true)
+    expect(matchesCategory(inChild, 'uncategorized', a)).toBe(false)
+  })
+
+  it('计数把子分类的项目算进每一级父分类', () => {
+    const counts = countByCategory(categories, [
+      project({ categoryId: 'a1' }),
+      project({ categoryId: 'a' }),
+      project({ categoryId: 'b' }),
+      project()
+    ])
+    expect(counts.get('a')).toBe(2)
+    expect(counts.get('a1')).toBe(1)
+    expect(counts.get('b')).toBe(1)
   })
 })
 

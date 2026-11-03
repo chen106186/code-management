@@ -1,10 +1,13 @@
+import { randomUUID } from 'crypto'
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
 import { dirname, resolve, sep } from 'path'
-import type { Config } from '@shared/types'
+import { subtreeIds } from '@shared/categories'
+import type { Category, Config } from '@shared/types'
 
 export interface ProjectMeta {
   favorite?: boolean
   tags?: string[]
+  categoryId?: string | null
 }
 
 interface StoreData extends Config {
@@ -15,6 +18,7 @@ interface StoreData extends Config {
 
 const MAX_TAGS = 10
 const MAX_TAG_LENGTH = 20
+const MAX_CATEGORY_NAME_LENGTH = 40
 
 export function normalizePath(path: string): string {
   return resolve(path)
@@ -50,8 +54,22 @@ function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : []
 }
 
+/** 配置可能被手动改过：丢弃不完整的条目，父分类不存在的提到顶层 */
+function parseCategories(value: unknown): Category[] {
+  if (!Array.isArray(value)) return []
+  const valid = value.filter(
+    (c): c is Category => c && typeof c.id === 'string' && typeof c.name === 'string'
+  )
+  const ids = new Set(valid.map((c) => c.id))
+  return valid.map(({ id, name, parentId }) => ({
+    id,
+    name,
+    parentId: typeof parentId === 'string' && ids.has(parentId) && parentId !== id ? parentId : null
+  }))
+}
+
 function emptyData(): StoreData {
-  return { version: 1, roots: [], manual: [], hidden: [], excluded: [], meta: {} }
+  return { version: 1, roots: [], manual: [], hidden: [], excluded: [], categories: [], meta: {} }
 }
 
 export class Store {
@@ -76,6 +94,7 @@ export class Store {
         manual: stringArray(raw.manual),
         hidden: stringArray(raw.hidden),
         excluded: stringArray(raw.excluded),
+        categories: parseCategories(raw.categories),
         meta: raw.meta && typeof raw.meta === 'object' ? raw.meta : {}
       }
     } catch {
@@ -98,7 +117,8 @@ export class Store {
       roots: [...roots],
       manual: [...manual],
       hidden: [...hidden],
-      excluded: [...excluded]
+      excluded: [...excluded],
+      categories: this.categories
     }
   }
 
@@ -150,9 +170,84 @@ export class Store {
     this.save()
   }
 
+  get categories(): Category[] {
+    return this.data.categories.map((c) => ({ ...c }))
+  }
+
+  private hasCategory(id: string): boolean {
+    return this.data.categories.some((c) => c.id === id)
+  }
+
+  /** 校验名称：不能为空，同一层不能重名 */
+  private validName(name: unknown, parentId: string | null, selfId?: string): string {
+    const trimmed = typeof name === 'string' ? name.trim().slice(0, MAX_CATEGORY_NAME_LENGTH) : ''
+    if (!trimmed) throw new Error('分类名称不能为空')
+    const duplicate = this.data.categories.some(
+      (c) => c.parentId === parentId && c.name === trimmed && c.id !== selfId
+    )
+    if (duplicate) throw new Error(`同一层已有分类“${trimmed}”`)
+    return trimmed
+  }
+
+  createCategory(name: unknown, parentId: string | null): Category {
+    if (parentId !== null && !this.hasCategory(parentId)) throw new Error('上级分类不存在')
+    const category = { id: randomUUID(), name: this.validName(name, parentId), parentId }
+    this.data.categories.push(category)
+    this.save()
+    return { ...category }
+  }
+
+  renameCategory(id: string, name: unknown): void {
+    const category = this.data.categories.find((c) => c.id === id)
+    if (!category) throw new Error('分类不存在')
+    category.name = this.validName(name, category.parentId, id)
+    this.save()
+  }
+
+  /** 移动到 parentId 下、beforeId 之前（null 排到最后）；同级顺序就是数组里的先后顺序 */
+  moveCategory(id: string, parentId: string | null, beforeId: string | null): void {
+    const list = this.data.categories
+    const category = list.find((c) => c.id === id)
+    if (!category) throw new Error('分类不存在')
+    if (parentId !== null && !this.hasCategory(parentId)) throw new Error('目标分类不存在')
+    if (parentId !== null && subtreeIds(list, id).has(parentId)) {
+      throw new Error('不能把分类移动到它自己或它的子分类下')
+    }
+    if (beforeId !== null && list.find((c) => c.id === beforeId)?.parentId !== parentId) {
+      throw new Error('目标位置不存在')
+    }
+    if (parentId !== category.parentId) this.validName(category.name, parentId, id)
+    // 插到自己前面等于位置不变
+    if (beforeId === id) return
+
+    list.splice(list.indexOf(category), 1)
+    category.parentId = parentId
+    const index = beforeId === null ? list.length : list.findIndex((c) => c.id === beforeId)
+    list.splice(index, 0, category)
+    this.save()
+  }
+
+  /** 删除分类及其子孙；其中的项目变为未分类，项目本身不受影响 */
+  deleteCategory(id: string): void {
+    const removed = subtreeIds(this.data.categories, id)
+    this.data.categories = this.data.categories.filter((c) => !removed.has(c.id))
+    for (const meta of Object.values(this.data.meta)) {
+      if (meta.categoryId && removed.has(meta.categoryId)) meta.categoryId = null
+    }
+    this.save()
+  }
+
+  setCategory(path: string, categoryId: string | null): void {
+    if (categoryId !== null && !this.hasCategory(categoryId)) throw new Error('分类不存在')
+    this.data.meta[pathKey(path)] = { ...this.metaOf(path), categoryId }
+    this.save()
+  }
+
   metaOf(path: string): Required<ProjectMeta> {
     const meta = this.data.meta[pathKey(path)]
-    return { favorite: meta?.favorite === true, tags: stringArray(meta?.tags) }
+    const categoryId =
+      typeof meta?.categoryId === 'string' && this.hasCategory(meta.categoryId) ? meta.categoryId : null
+    return { favorite: meta?.favorite === true, tags: stringArray(meta?.tags), categoryId }
   }
 
   setFavorite(path: string, favorite: boolean): void {

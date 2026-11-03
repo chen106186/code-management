@@ -6,6 +6,7 @@ import {
   EVENT_REPO_CHANGED,
   type Api
 } from '@shared/ipc'
+import { subtreeIds } from '@shared/categories'
 import type { DiffTarget, FetchAllItem } from '@shared/repo'
 import { readChanges } from './services/git'
 import {
@@ -52,6 +53,12 @@ export function registerIpc(
       throw new Error('未登记的项目路径')
     }
     return path
+  }
+
+  const categoryRef = (id: unknown): string | null => {
+    if (id === null) return null
+    if (typeof id !== 'string') throw new Error('分类无效')
+    return id
   }
 
   const diffTarget = (repo: string, target: DiffTarget): DiffTarget => {
@@ -136,6 +143,44 @@ export function registerIpc(
         throw new Error('标签无效')
       }
       return store.setTags(known(path), tags)
+    },
+
+    createCategory: async (name, parentId) => {
+      store.createCategory(name, categoryRef(parentId))
+      return store.categories
+    },
+
+    renameCategory: async (id, name) => {
+      store.renameCategory(String(id), name)
+      return store.categories
+    },
+
+    moveCategory: async (id, parentId, beforeId) => {
+      store.moveCategory(String(id), categoryRef(parentId), categoryRef(beforeId))
+      return store.categories
+    },
+
+    deleteCategory: async (id) => {
+      const categories = store.categories
+      const category = categories.find((c) => c.id === id)
+      if (!category) throw new Error('分类不存在')
+      const childCount = subtreeIds(categories, category.id).size - 1
+      const { response } = await dialog.showMessageBox(getWindow(), {
+        type: 'warning',
+        title: '删除分类',
+        message: `删除分类“${category.name}”？`,
+        detail: `${childCount ? `其下 ${childCount} 个子分类也会一起删除。` : ''}只删除分类，其中的项目会变成未分类，文件不受影响。`,
+        buttons: ['删除', '取消'],
+        defaultId: 1,
+        cancelId: 1
+      })
+      if (response !== 0) return null
+      store.deleteCategory(category.id)
+      return store.categories
+    },
+
+    setProjectCategory: async (path, categoryId) => {
+      store.setCategory(known(path), categoryRef(categoryId))
     },
 
     openInEditor: (path) => openInEditor(known(path)),
