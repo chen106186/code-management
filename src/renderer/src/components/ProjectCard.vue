@@ -30,6 +30,7 @@ import SelectBox from '@renderer/components/SelectBox.vue'
 import TechIcon from '@renderer/components/TechIcon.vue'
 import { startProjectDrag } from '@renderer/lib/projectDrag'
 import { branchLabel as labelOfBranch, changeCount, formatRelative } from '@renderer/lib/projectList'
+import { techIcon } from '@renderer/lib/techIcons'
 import { useRemarkEditor } from '@renderer/lib/useRemarkEditor'
 import { useProjectsStore } from '@renderer/stores/projects'
 
@@ -285,7 +286,8 @@ function removeTag(tag: string): void {
           :key="tag"
           class="group inline-flex items-center gap-1 rounded bg-teal-50 py-0.5 pl-1.5 pr-1 text-[11px] text-teal-800 dark:bg-teal-900/40 dark:text-teal-300"
         >
-          <Tag :size="10" class="shrink-0" />
+          <TechIcon v-if="techIcon(tag)" :name="tag" :size="11" data-testid="tag-tech-icon" />
+          <Tag v-else :size="10" class="shrink-0" data-testid="tag-plain-icon" />
           {{ tag }}
           <button
             class="rounded opacity-50 hover:opacity-100 group-hover:opacity-100"
