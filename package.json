@@ -2,25 +2,28 @@
   "name": "code-management",
   "version": "0.1.0",
   "description": "Code Management Tool",
-  "main": "./out/main/index.js",
+  "type": "module",
   "author": "chenng",
   "private": true,
   "scripts": {
-    "dev": "electron-vite dev",
-    "build": "electron-vite build",
-    "preview": "electron-vite preview",
-    "test": "vitest run",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "web:dev": "vite",
+    "web:build": "vite build",
+    "test": "vitest run && cargo test --manifest-path src-tauri/Cargo.toml",
+    "test:web": "vitest run",
+    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && vue-tsc --noEmit -p tsconfig.web.json",
-    "package": "electron-vite build && electron-builder --win"
+    "package": "tauri build",
+    "tauri": "tauri"
   },
   "devDependencies": {
+    "@tauri-apps/api": "^2.12.4",
+    "@tauri-apps/cli": "^2.12.4",
     "@types/node": "^22.20.5",
     "@vitejs/plugin-vue": "^5.2.4",
     "autoprefixer": "^10.6.2",
     "dompurify": "^3.4.15",
-    "electron": "^39.8.10",
-    "electron-builder": "^26.0.0",
-    "electron-vite": "^3.1.0",
     "lucide-vue-next": "^0.577.0",
     "marked": "^14.0.0",
     "monaco-editor": "^0.57.0",
@@ -34,29 +37,5 @@
     "vue": "^3.5.44",
     "vue-router": "^4.6.4",
     "vue-tsc": "^2.2.12"
-  },
-  "build": {
-    "appId": "com.chenng.code-management",
-    "productName": "Code Management Tool",
-    "executableName": "code-management",
-    "artifactName": "code-management-${version}-setup.${ext}",
-    "directories": {
-      "output": "dist"
-    },
-    "files": [
-      "out/**",
-      "resources/icon.png"
-    ],
-    "electronDist": "node_modules/electron/dist",
-    "npmRebuild": false,
-    "win": {
-      "target": "nsis",
-      "icon": "resources/icon.ico",
-      "signExecutable": false
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true
-    }
   }
 }

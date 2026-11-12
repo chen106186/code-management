@@ -7,17 +7,7 @@
     "noUnusedLocals": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "types": ["node"],
-    "baseUrl": ".",
-    "paths": {
-      "@shared/*": ["src/shared/*"]
-    }
+    "types": ["node"]
   },
-  "include": [
-    "electron.vite.config.ts",
-    "vitest.config.ts",
-    "src/main/**/*",
-    "src/preload/**/*",
-    "src/shared/**/*"
-  ]
+  "include": ["vite.config.ts", "vitest.config.ts"]
 }

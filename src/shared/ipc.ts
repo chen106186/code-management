@@ -22,7 +22,7 @@ import type {
   ThemeSetting
 } from './types'
 
-/** 渲染进程可调用的全部能力，通道名与方法名一一对应 */
+/** 页面可调用的全部能力；Rust 端 src-tauri/src/api.rs 按方法名分发，参数顺序保持一致 */
 export interface Api {
   refresh(): Promise<Snapshot>
   /** 以下三个方法弹出系统对话框，用户取消时返回 null */
@@ -156,5 +156,3 @@ export const API_METHODS = [
   'cancelRemote',
   'watchRepo'
 ] as const satisfies readonly (keyof Api)[]
-
-export const channelOf = (method: keyof Api): string => `api:${method}`

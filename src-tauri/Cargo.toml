@@ -1,0 +1,40 @@
+[package]
+name = "code-management"
+version = "0.1.0"
+description = "Code Management Tool"
+authors = ["chenng"]
+edition = "2021"
+rust-version = "1.80"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-single-instance = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+tokio = { version = "1", features = ["process", "fs", "sync", "time", "macros", "rt-multi-thread", "io-util"] }
+tokio-util = "0.7"
+futures = "0.3"
+uuid = { version = "1", features = ["v4"] }
+regex = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+base64 = "0.22"
+notify = "8"
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["test-util"] }
+
+[profile.release]
+# 体积优先：界面跑在 WebView2 里，后端主要是等 git 和磁盘
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

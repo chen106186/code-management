@@ -30,3 +30,7 @@ dist
 .tmp-test
 .DS_Store
 .idea
+
+# Tauri
+src-tauri/target
+src-tauri/gen
