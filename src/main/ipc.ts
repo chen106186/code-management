@@ -4,14 +4,18 @@ import { join } from 'path'
 import {
   API_METHODS,
   channelOf,
+  EVENT_AUTO_FETCHED,
   EVENT_REMOTE_PROGRESS,
   EVENT_REPO_CHANGED,
+  EVENT_STATS_UPDATED,
   type Api
 } from '@shared/ipc'
 import { subtreeIds } from '@shared/categories'
 import { remoteWebUrl } from '@shared/remotes'
 import type { DiffTarget, FetchAllItem } from '@shared/repo'
 import type { ProjectPatch } from '@shared/types'
+import { readActivity } from './services/activity'
+import { AutoFetcher } from './services/autoFetch'
 import { readChanges, readRemotes } from './services/git'
 import {
   assertHash,
@@ -25,11 +29,14 @@ import {
 } from './services/gitOps'
 import { openInEditor, openInExplorer, openInTerminal } from './services/openers'
 import { mapLimit, type ProjectService } from './services/projects'
+import type { StatsService } from './services/projectStats'
+import { readReadme, readReadmeImage } from './services/readme'
 import { runFetch } from './services/remoteOps'
 import { RepoQueue } from './services/repoQueue'
 import { RepoWatcher } from './services/repoWatcher'
-import { isThemeSetting, parseExport, type Store } from './services/store'
+import { isAutoFetchMinutes, isThemeSetting, parseExport, type Store } from './services/store'
 
+const ACTIVITY_CONCURRENCY = 6
 const FETCH_ALL_CONCURRENCY = 4
 const FETCH_ALL_TIMEOUT_MS = 60_000
 const MAX_LOG_PAGE = 500
@@ -50,8 +57,9 @@ async function pickDirectory(
 export function registerIpc(
   store: Store,
   projects: ProjectService,
+  stats: StatsService,
   getWindow: () => BrowserWindow
-): void {
+): AutoFetcher {
   /** 渲染进程传来的路径必须是已登记的项目或目录，否则拒绝 */
   const known = (path: unknown): string => {
     if (typeof path !== 'string' || !projects.isKnown(path)) {
@@ -115,6 +123,50 @@ export function registerIpc(
     operations.set(opId, controller)
     return controller
   }
+
+  const fetchAllRepos = async (
+    signal: AbortSignal,
+    onProgress: (line: string) => void = () => {}
+  ): Promise<FetchAllItem[]> => {
+    const { projects: list } = await projects.snapshot()
+    const repos = list.filter((p) => p.git)
+    let done = 0
+    const results = await mapLimit(repos, FETCH_ALL_CONCURRENCY, async (project) => {
+      const item = async (): Promise<FetchAllItem | null> => {
+        const base = { path: project.path, name: project.name }
+        // 没有配置远程的仓库不算失败，也不计入结果
+        if (!(await listRemotes(project.path)).length) return null
+        const result = await runFetch(project.path, {
+          signal,
+          nonInteractive: true,
+          timeoutMs: FETCH_ALL_TIMEOUT_MS
+        })
+        return { ...base, ...result }
+      }
+      const result = await queue
+        .run(project.path, item)
+        .catch((error): FetchAllItem => ({
+          path: project.path,
+          name: project.name,
+          ok: false,
+          cancelled: false,
+          message: (error as Error).message
+        }))
+      done++
+      onProgress(`${done} / ${repos.length}`)
+      return result
+    })
+    return results.filter((r): r is FetchAllItem => r !== null)
+  }
+
+  // 结果由页面收到事件后刷新；窗口隐藏时页面也在运行，托盘状态会跟着更新
+  const autoFetch = new AutoFetcher(
+    () => fetchAllRepos(new AbortController().signal),
+    (status) => send(EVENT_AUTO_FETCHED, status)
+  )
+  autoFetch.setInterval(store.autoFetchMinutes)
+
+  stats.onUpdate = (path, value) => send(EVENT_STATS_UPDATED, { path, stats: value })
 
   const handlers: Api = {
     refresh: () => projects.snapshot(),
@@ -241,7 +293,7 @@ export function registerIpc(
       const date = new Date().toISOString().slice(0, 10)
       const { canceled, filePath } = await dialog.showSaveDialog(getWindow(), {
         title: '导出配置',
-        defaultPath: join(store.directory, `项目代码看板配置-${date}.json`),
+        defaultPath: join(store.directory, `code-management-tool-config-${date}.json`),
         filters: [{ name: 'JSON', extensions: ['json'] }]
       })
       if (canceled || !filePath) return null
@@ -271,6 +323,7 @@ export function registerIpc(
       if (response !== 0) return null
       store.replaceData(data)
       nativeTheme.themeSource = store.theme
+      autoFetch.setInterval(store.autoFetchMinutes)
       return projects.snapshot()
     },
 
@@ -279,6 +332,84 @@ export function registerIpc(
       if (!isThemeSetting(theme)) throw new Error('主题无效')
       store.setTheme(theme)
       nativeTheme.themeSource = theme
+    },
+
+    setAutoFetchMinutes: async (minutes) => {
+      if (!isAutoFetchMinutes(minutes)) throw new Error('Fetch 间隔无效')
+      store.setAutoFetchMinutes(minutes)
+      autoFetch.setInterval(minutes)
+    },
+
+    getAutoFetchStatus: async () => autoFetch.status,
+
+    setCloseToTray: async (enabled) => {
+      store.setCloseToTray(enabled === true)
+    },
+
+    saveView: async (view) => {
+      store.saveView(view)
+      return store.savedViews
+    },
+
+    deleteView: async (id) => {
+      store.deleteView(String(id))
+      return store.savedViews
+    },
+
+    renameTag: async (from, to) => {
+      if (typeof from !== 'string' || typeof to !== 'string') throw new Error('标签无效')
+      const name = to.trim()
+      if (name === from) return projects.snapshot()
+      if (store.tagUsage(name) > 0) {
+        const { response } = await dialog.showMessageBox(getWindow(), {
+          type: 'question',
+          title: '合并标签',
+          message: `把“${from}”合并到已有的“${name}”？`,
+          detail: `${store.tagUsage(from)} 个项目的标签会改成“${name}”，合并后不能自动拆分。`,
+          buttons: ['合并', '取消'],
+          defaultId: 1,
+          cancelId: 1
+        })
+        if (response !== 0) return null
+      }
+      store.renameTag(from, name)
+      return projects.snapshot()
+    },
+
+    deleteTag: async (tag) => {
+      if (typeof tag !== 'string') throw new Error('标签无效')
+      const { response } = await dialog.showMessageBox(getWindow(), {
+        type: 'warning',
+        title: '删除标签',
+        message: `删除标签“${tag}”？`,
+        detail: `会从 ${store.tagUsage(tag)} 个项目上移除，项目文件不受影响。`,
+        buttons: ['删除', '取消'],
+        defaultId: 1,
+        cancelId: 1
+      })
+      if (response !== 0) return null
+      store.deleteTag(tag)
+      return projects.snapshot()
+    },
+
+    recomputeStats: async () => projects.recomputeStats(),
+
+    getActivity: async (mineOnly) => {
+      const { projects: list } = await projects.snapshot()
+      const repos = list.filter((p) => p.git?.head)
+      const entries = await mapLimit(repos, ACTIVITY_CONCURRENCY, async (project) => {
+        // 单个仓库读不了不影响其他仓库
+        const days = await readActivity(project.path, mineOnly === true).catch(() => ({}))
+        return [project.path, days] as const
+      })
+      return Object.fromEntries(entries)
+    },
+
+    getReadme: async (path) => readReadme(known(path)),
+
+    getReadmeImage: async (path, relativePath) => {
+      if (typeof relativePath !== 'string') return null
+      return readReadmeImage(known(path), relativePath)
     },
 
     openInEditor: (path) => openInEditor(known(path)),
@@ -338,35 +469,7 @@ export function registerIpc(
     fetchAll: async (opId) => {
       const controller = beginOperation(opId)
       try {
-        const { projects: list } = await projects.snapshot()
-        const repos = list.filter((p) => p.git)
-        let done = 0
-        const results = await mapLimit(repos, FETCH_ALL_CONCURRENCY, async (project) => {
-          const item = async (): Promise<FetchAllItem | null> => {
-            const base = { path: project.path, name: project.name }
-            // 没有配置远程的仓库不算失败，也不计入结果
-            if (!(await listRemotes(project.path)).length) return null
-            const result = await runFetch(project.path, {
-              signal: controller.signal,
-              nonInteractive: true,
-              timeoutMs: FETCH_ALL_TIMEOUT_MS
-            })
-            return { ...base, ...result }
-          }
-          const result = await queue
-            .run(project.path, item)
-            .catch((error): FetchAllItem => ({
-              path: project.path,
-              name: project.name,
-              ok: false,
-              cancelled: false,
-              message: (error as Error).message
-            }))
-          done++
-          send(EVENT_REMOTE_PROGRESS, { opId, line: `${done} / ${repos.length}` })
-          return result
-        })
-        return results.filter((r): r is FetchAllItem => r !== null)
+        return await fetchAllRepos(controller.signal, (line) => send(EVENT_REMOTE_PROGRESS, { opId, line }))
       } finally {
         operations.delete(opId)
       }
@@ -385,4 +488,5 @@ export function registerIpc(
     const handler = handlers[method] as (...args: unknown[]) => Promise<unknown>
     ipcMain.handle(channelOf(method), (_event, ...args) => handler(...args))
   }
+  return autoFetch
 }

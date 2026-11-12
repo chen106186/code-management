@@ -1,18 +1,28 @@
 import { describe, expect, it } from 'vitest'
-import type { GitStatus, Project } from '@shared/types'
+import type { GitStatus, Project, ProjectStats } from '@shared/types'
 import {
   compareProjects,
   countByCategory,
+  formatBytes,
   formatRelative,
+  languageShares,
+  LIST_COLUMNS,
+  listLayout,
+  mainRemoteUrl,
   matchesCategory,
   matchesFilter,
   matchesHiddenQuery,
   matchesQuery,
+  matchesTagFilter,
   parseListPrefs,
   rankProjects,
   SCOPE_ALL,
   SCOPE_HIDDEN,
-  STALE_MS
+  sortsDescending,
+  STALE_MS,
+  statsHint,
+  tagFilterOptions,
+  type SortKind
 } from './projectList'
 
 const git = (overrides: Partial<GitStatus> = {}): GitStatus => ({
@@ -25,6 +35,7 @@ const git = (overrides: Partial<GitStatus> = {}): GitStatus => ({
   unstaged: 0,
   untracked: 0,
   conflicted: 0,
+  stashCount: 0,
   lastCommit: null,
   remotes: [],
   ...overrides
@@ -43,7 +54,111 @@ const project = (overrides: Partial<Project> = {}): Project => ({
   tags: [],
   categoryId: null,
   remark: null,
+  stats: null,
   ...overrides
+})
+
+describe('按列排序', () => {
+  const stats = (size: number, lines = 0, language?: string): ProjectStats => ({
+    size,
+    generatedSize: 0,
+    lines,
+    languages: language ? [{ name: language, lines }] : [],
+    truncated: false,
+    computedAt: 0
+  })
+  const order = (items: Project[], sort: SortKind, reverse = false): string[] =>
+    [...items].sort((a, b) => compareProjects(a, b, sort, reverse)).map((p) => p.name)
+
+  it('文字默认正序，数字默认从大到小，反向后都翻转', () => {
+    const items = [project({ name: 'b', stats: stats(1) }), project({ name: 'a', stats: stats(2) })]
+    expect(order(items, 'name')).toEqual(['a', 'b'])
+    expect(order(items, 'name', true)).toEqual(['b', 'a'])
+    expect(order(items, 'size')).toEqual(['a', 'b'])
+    expect(order(items, 'size', true)).toEqual(['b', 'a'])
+    expect(sortsDescending('name', false)).toBe(false)
+    expect(sortsDescending('size', false)).toBe(true)
+    expect(sortsDescending('size', true)).toBe(false)
+  })
+
+  it('没有值的项目正序倒序都排在最后', () => {
+    const items = [project({ name: 'none' }), project({ name: 'one', stats: stats(1) }), project({ name: 'two', stats: stats(2) })]
+    expect(order(items, 'size')).toEqual(['two', 'one', 'none'])
+    expect(order(items, 'size', true)).toEqual(['one', 'two', 'none'])
+    const noGit = project({ name: 'folder', git: null })
+    expect(order([noGit, project({ name: 'repo' })], 'branch')).toEqual(['repo', 'folder'])
+  })
+
+  it('收藏仍然排在前面，相同值按名称', () => {
+    const items = [project({ name: 'c' }), project({ name: 'b' }), project({ name: 'a', favorite: true, git: null })]
+    expect(order(items, 'changes')).toEqual(['a', 'b', 'c'])
+    expect(order(items, 'changes', true)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('Git 地址优先用 origin，语言用行数最多的', () => {
+    const remotes = [{ name: 'a', url: 'z' }, { name: 'origin', url: 'y' }]
+    expect(mainRemoteUrl(project({ git: git({ remotes }) }))).toBe('y')
+    expect(mainRemoteUrl(project())).toBeNull()
+    const items = [project({ name: 'x', stats: stats(1, 1, 'Vue') }), project({ name: 'y', stats: stats(1, 1, 'C') })]
+    expect(order(items, 'language')).toEqual(['y', 'x'])
+  })
+})
+
+describe('标签筛选', () => {
+  const items = [
+    project({ name: 'a', tech: ['Java'], tags: ['后台'] }),
+    project({ name: 'b', tech: ['Vue', 'Vite'], tags: [] }),
+    project({ name: 'c', tech: [], tags: ['vue'] })
+  ]
+
+  it('选项包含手动标签和技术栈，只差大小写的合并', () => {
+    expect(tagFilterOptions(items)).toEqual(['后台', 'Java', 'Vite', 'Vue'])
+    expect(tagFilterOptions([])).toEqual([])
+  })
+
+  it('选中后手动标签和技术栈都能匹配，不区分大小写', () => {
+    expect(items.filter((p) => matchesTagFilter(p, 'Vue')).map((p) => p.name)).toEqual(['b', 'c'])
+    expect(items.filter((p) => matchesTagFilter(p, 'Java')).map((p) => p.name)).toEqual(['a'])
+    expect(items.filter((p) => matchesTagFilter(p, '后台')).map((p) => p.name)).toEqual(['a'])
+    expect(items.filter((p) => matchesTagFilter(p, null))).toHaveLength(3)
+  })
+})
+
+describe('列表的列', () => {
+  it('列宽和最小宽度跟随显示的列', () => {
+    const all = listLayout(LIST_COLUMNS)
+    const few = listLayout(LIST_COLUMNS.filter((c) => c.id === 'activity'))
+    expect(few.template.split(' ').pop()).toBe('5rem')
+    expect(all.template).toContain('8rem')
+    expect(parseFloat(all.minWidth)).toBeGreaterThan(parseFloat(few.minWidth))
+  })
+
+  it('默认隐藏可选列，保存的值里无效的列被丢弃', () => {
+    expect(parseListPrefs(null).hiddenColumns).toEqual(['language', 'lines', 'size'])
+    expect(parseListPrefs(JSON.stringify({ hiddenColumns: ['commit', '旧列', 1] })).hiddenColumns).toEqual(['commit'])
+    expect(parseListPrefs(JSON.stringify({ hiddenColumns: [] })).hiddenColumns).toEqual([])
+  })
+})
+
+describe('格式化', () => {
+  it('磁盘占用', () => {
+    expect(formatBytes(0)).toBe('0 B')
+    expect(formatBytes(1536)).toBe('1.5 KB')
+    expect(formatBytes(150 * 1024 * 1024)).toBe('150 MB')
+  })
+
+  it('语言占比和说明', () => {
+    const stats: ProjectStats = {
+      size: 2048,
+      generatedSize: 1024,
+      lines: 4,
+      languages: [{ name: 'Vue', lines: 3 }, { name: 'C', lines: 1 }],
+      truncated: true,
+      computedAt: 0
+    }
+    expect(languageShares(stats).map((l) => l.percent)).toEqual([75, 25])
+    expect(statsHint(stats)).toBe('磁盘占用 2.0 KB，其中依赖和构建产物 1.0 KB，代码 4 行，项目太大，只统计了一部分')
+  })
 })
 
 describe('看板统计的筛选', () => {
@@ -63,12 +178,30 @@ describe('看板统计的筛选', () => {
 
 describe('parseListPrefs', () => {
   it('读取有效值', () => {
-    const prefs = { filter: 'behind', sort: 'name', scope: 'c1', activeTag: 't', viewMode: 'list' }
+    const prefs = {
+      filter: 'behind',
+      sort: 'name',
+      sortReverse: true,
+      scope: 'c1',
+      activeTag: 't',
+      viewMode: 'list',
+      hiddenColumns: ['commit'],
+      showActivity: true
+    }
     expect(parseListPrefs(JSON.stringify(prefs))).toEqual(prefs)
   })
 
   it('损坏或无效的值退回默认，已隐藏不恢复', () => {
-    const defaults = { filter: 'all', sort: 'activity', scope: SCOPE_ALL, activeTag: null, viewMode: 'cards' }
+    const defaults = {
+      filter: 'all',
+      sort: 'activity',
+      sortReverse: false,
+      scope: SCOPE_ALL,
+      activeTag: null,
+      viewMode: 'cards',
+      hiddenColumns: ['language', 'lines', 'size'],
+      showActivity: false
+    }
     expect(parseListPrefs(null)).toEqual(defaults)
     expect(parseListPrefs('不是 JSON')).toEqual(defaults)
     expect(parseListPrefs('null')).toEqual(defaults)

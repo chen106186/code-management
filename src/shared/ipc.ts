@@ -9,7 +9,18 @@ import type {
   RemoteResult,
   RepoChanges
 } from './repo'
-import type { Category, ProjectMetaValues, ProjectPatch, Snapshot, ThemeSetting } from './types'
+import type {
+  Activity,
+  AutoFetchStatus,
+  Category,
+  ProjectMetaValues,
+  ProjectPatch,
+  ProjectStats,
+  Readme,
+  SavedView,
+  Snapshot,
+  ThemeSetting
+} from './types'
 
 /** 渲染进程可调用的全部能力，通道名与方法名一一对应 */
 export interface Api {
@@ -43,6 +54,23 @@ export interface Api {
   /** 弹出选择和确认对话框，用户取消时返回 null */
   importConfig(): Promise<Snapshot | null>
   setTheme(theme: ThemeSetting): Promise<void>
+  setAutoFetchMinutes(minutes: number): Promise<void>
+  getAutoFetchStatus(): Promise<AutoFetchStatus>
+  setCloseToTray(enabled: boolean): Promise<void>
+  /** 同名视图会被覆盖 */
+  saveView(view: Omit<SavedView, 'id'>): Promise<SavedView[]>
+  deleteView(id: string): Promise<SavedView[]>
+  /** 改成已有的标签时弹出合并确认，用户取消时返回 null */
+  renameTag(from: string, to: string): Promise<Snapshot | null>
+  /** 弹出确认框，用户取消时返回 null */
+  deleteTag(tag: string): Promise<Snapshot | null>
+  /** 重新计算所有项目的磁盘占用和代码行数，结果通过事件陆续推送 */
+  recomputeStats(): Promise<void>
+  getActivity(mineOnly: boolean): Promise<Activity>
+  /** 没有 README 时返回 null */
+  getReadme(path: string): Promise<Readme | null>
+  /** 返回 README 引用的本地图片的 data URL，读不到时返回 null */
+  getReadmeImage(path: string, relativePath: string): Promise<string | null>
   openInEditor(path: string): Promise<void>
   openInTerminal(path: string): Promise<void>
   openInExplorer(path: string): Promise<void>
@@ -68,10 +96,14 @@ export interface Api {
 export interface ApiEvents {
   onRemoteProgress(listener: (progress: RemoteProgress) => void): () => void
   onRepoChanged(listener: (path: string) => void): () => void
+  onAutoFetched(listener: (status: AutoFetchStatus) => void): () => void
+  onStatsUpdated(listener: (update: { path: string; stats: ProjectStats }) => void): () => void
 }
 
 export const EVENT_REMOTE_PROGRESS = 'event:remoteProgress'
 export const EVENT_REPO_CHANGED = 'event:repoChanged'
+export const EVENT_AUTO_FETCHED = 'event:autoFetched'
+export const EVENT_STATS_UPDATED = 'event:statsUpdated'
 
 export const API_METHODS = [
   'refresh',
@@ -97,6 +129,17 @@ export const API_METHODS = [
   'exportConfig',
   'importConfig',
   'setTheme',
+  'setAutoFetchMinutes',
+  'getAutoFetchStatus',
+  'setCloseToTray',
+  'saveView',
+  'deleteView',
+  'renameTag',
+  'deleteTag',
+  'recomputeStats',
+  'getActivity',
+  'getReadme',
+  'getReadmeImage',
   'openInEditor',
   'openInTerminal',
   'openInExplorer',

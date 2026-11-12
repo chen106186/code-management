@@ -12,7 +12,7 @@ import { errorMessage } from '@renderer/lib/errors'
 
 const LOG_PAGE = 100
 
-export type RepoTab = 'changes' | 'history' | 'branches'
+export type RepoTab = 'changes' | 'history' | 'branches' | 'info'
 type ChangeTarget = Extract<DiffTarget, { kind: 'staged' | 'unstaged' }>
 
 export const useRepoStore = defineStore('repo', () => {

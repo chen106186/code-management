@@ -2,8 +2,10 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import {
   API_METHODS,
   channelOf,
+  EVENT_AUTO_FETCHED,
   EVENT_REMOTE_PROGRESS,
   EVENT_REPO_CHANGED,
+  EVENT_STATS_UPDATED,
   type Api,
   type ApiEvents
 } from '@shared/ipc'
@@ -23,7 +25,9 @@ function subscribe<T>(channel: string, listener: (payload: T) => void): () => vo
 
 const events: ApiEvents = {
   onRemoteProgress: (listener) => subscribe(EVENT_REMOTE_PROGRESS, listener),
-  onRepoChanged: (listener) => subscribe(EVENT_REPO_CHANGED, listener)
+  onRepoChanged: (listener) => subscribe(EVENT_REPO_CHANGED, listener),
+  onAutoFetched: (listener) => subscribe(EVENT_AUTO_FETCHED, listener),
+  onStatsUpdated: (listener) => subscribe(EVENT_STATS_UPDATED, listener)
 }
 
 contextBridge.exposeInMainWorld('api', { ...api, ...events })

@@ -22,6 +22,7 @@ import {
   type CategoryRow,
   type DropPosition
 } from '@shared/categories'
+import SavedViews from '@renderer/components/SavedViews.vue'
 import logo from '@renderer/assets/logo.png'
 import { CATEGORY_DRAG_TYPE, draggedProjects, PROJECT_DRAG_TYPE } from '@renderer/lib/projectDrag'
 import { SCOPE_ALL, SCOPE_HIDDEN, SCOPE_UNCATEGORIZED } from '@renderer/lib/projectList'
@@ -207,7 +208,7 @@ const rowClass = (scope: string): string =>
   >
     <header class="flex h-[57px] shrink-0 items-center gap-2 px-3">
       <img :src="logo" alt="" class="h-6 w-6" />
-      <h1 class="truncate text-sm font-semibold">项目代码看板</h1>
+      <h1 class="truncate text-sm font-semibold">Code Management Tool</h1>
     </header>
 
     <nav class="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
@@ -252,6 +253,8 @@ const rowClass = (scope: string): string =>
           </button>
         </li>
       </ul>
+
+      <SavedViews />
 
       <div class="mt-3 flex h-7 items-center justify-between pl-2">
         <h2 class="text-xs font-semibold text-zinc-500 dark:text-zinc-400">分类</h2>

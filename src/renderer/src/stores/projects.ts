@@ -3,12 +3,14 @@ import { computed, ref, watch } from 'vue'
 import type { Branch, FetchAllItem } from '@shared/repo'
 import { subtreeIds } from '@shared/categories'
 import type {
+  AutoFetchStatus,
   Category,
   Config,
   HiddenProject,
   Project,
   ProjectMove,
   ProjectPatch,
+  SavedView,
   ScanError,
   Snapshot,
   ThemeSetting
@@ -18,16 +20,20 @@ import {
   compareProjects,
   countByCategory,
   FILTERS,
+  LIST_COLUMNS,
   matchesCategory,
   matchesFilter,
   matchesHiddenQuery,
   matchesQuery,
+  matchesTagFilter,
   parseListPrefs,
   SCOPE_ALL,
   SCOPE_HIDDEN,
   SCOPE_UNCATEGORIZED,
   STAT_FILTERS,
+  tagFilterOptions,
   type CategoryScope,
+  type ColumnId,
   type FilterKind,
   type SortKind,
   type ViewMode
@@ -70,7 +76,10 @@ export const useProjectsStore = defineStore('projects', () => {
     hidden: [],
     excluded: [],
     categories: [],
-    theme: 'system'
+    theme: 'system',
+    autoFetchMinutes: 0,
+    closeToTray: true,
+    savedViews: []
   })
   const scanErrors = ref<ScanError[]>([])
   const loaded = ref(false)
@@ -87,21 +96,27 @@ export const useProjectsStore = defineStore('projects', () => {
   const filter = ref<FilterKind>(prefs.filter)
   const activeTag = ref<string | null>(prefs.activeTag)
   const sort = ref<SortKind>(prefs.sort)
+  const sortReverse = ref(prefs.sortReverse)
   const viewMode = ref<ViewMode>(prefs.viewMode)
+  const hiddenColumns = ref<ColumnId[]>(prefs.hiddenColumns)
+  const showActivity = ref(prefs.showActivity)
 
   const scope = ref<CategoryScope>(prefs.scope)
   const collapsed = ref(loadCollapsed())
 
-  watch([filter, sort, scope, activeTag, viewMode], () => {
+  watch([filter, sort, sortReverse, scope, activeTag, viewMode, hiddenColumns, showActivity], () => {
     try {
       localStorage.setItem(
         LIST_PREFS_KEY,
         JSON.stringify({
           filter: filter.value,
           sort: sort.value,
+          sortReverse: sortReverse.value,
           scope: scope.value,
           activeTag: activeTag.value,
-          viewMode: viewMode.value
+          viewMode: viewMode.value,
+          hiddenColumns: hiddenColumns.value,
+          showActivity: showActivity.value
         })
       )
     } catch {
@@ -110,6 +125,52 @@ export const useProjectsStore = defineStore('projects', () => {
   })
 
   const quickJumpOpen = ref(false)
+  const autoFetchStatus = ref<AutoFetchStatus>({ lastRun: null, succeeded: 0, failed: [] })
+
+  const listColumns = computed(() =>
+    LIST_COLUMNS.filter((column) => !hiddenColumns.value.includes(column.id))
+  )
+
+  function toggleColumn(id: ColumnId): void {
+    hiddenColumns.value = hiddenColumns.value.includes(id)
+      ? hiddenColumns.value.filter((column) => column !== id)
+      : [...hiddenColumns.value, id]
+  }
+
+  /** 点已经在排序的列翻转方向，点其他列按那一列的默认方向 */
+  function sortBy(kind: SortKind): void {
+    sortReverse.value = sort.value === kind ? !sortReverse.value : false
+    sort.value = kind
+  }
+
+  const savedViews = computed(() => config.value.savedViews)
+
+  /** 当前的筛选条件正好是某个保存的视图时高亮它 */
+  const activeViewId = computed(
+    () =>
+      savedViews.value.find(
+        (view) =>
+          view.filter === filter.value &&
+          view.scope === scope.value &&
+          view.activeTag === activeTag.value &&
+          view.query === query.value &&
+          view.sort === sort.value &&
+          view.sortReverse === sortReverse.value
+      )?.id ?? null
+  )
+
+  /** 保存的值可能来自旧版本或导入的文件，和启动时读取的偏好走同一套校验 */
+  function applyView(view: SavedView): void {
+    const parsed = parseListPrefs(JSON.stringify(view))
+    filter.value = parsed.filter
+    sort.value = parsed.sort
+    sortReverse.value = parsed.sortReverse
+    scope.value = parsed.scope
+    activeTag.value = parsed.activeTag
+    query.value = view.query
+    if (activeTag.value && !tagOptions.value.includes(activeTag.value)) activeTag.value = null
+    checkScope()
+  }
 
   const categories = computed(() => config.value.categories)
   const categoryCounts = computed(() => countByCategory(categories.value, projects.value))
@@ -131,6 +192,8 @@ export const useProjectsStore = defineStore('projects', () => {
     [...new Set(projects.value.flatMap((p) => p.tags))].sort((a, b) => a.localeCompare(b, 'zh-CN'))
   )
 
+  const tagOptions = computed(() => tagFilterOptions(projects.value))
+
   const filterCounts = computed(() =>
     Object.fromEntries(
       [...FILTERS, ...STAT_FILTERS].map(({ kind }) => [
@@ -146,9 +209,9 @@ export const useProjectsStore = defineStore('projects', () => {
         (p) =>
           matchesFilter(p, filter.value) &&
           matchesQuery(p, query.value) &&
-          (!activeTag.value || p.tags.includes(activeTag.value))
+          matchesTagFilter(p, activeTag.value)
       )
-      .sort((a, b) => compareProjects(a, b, sort.value))
+      .sort((a, b) => compareProjects(a, b, sort.value, sortReverse.value))
   )
 
   const selected = ref(new Set<string>())
@@ -196,7 +259,7 @@ export const useProjectsStore = defineStore('projects', () => {
     moves.value = snapshot.moves
     config.value = snapshot.config
     scanErrors.value = snapshot.scanErrors
-    if (activeTag.value && !allTags.value.includes(activeTag.value)) activeTag.value = null
+    if (activeTag.value && !tagOptions.value.includes(activeTag.value)) activeTag.value = null
     checkScope()
   }
 
@@ -306,6 +369,24 @@ export const useProjectsStore = defineStore('projects', () => {
     return projects.value.find((p) => p.path === path)
   }
 
+  window.api.onAutoFetched((status) => {
+    autoFetchStatus.value = status
+    void refresh()
+  })
+  window.api.onStatsUpdated(({ path, stats }) => {
+    const project = find(path)
+    if (project) project.stats = stats
+  })
+  void window.api.getAutoFetchStatus().then((status) => {
+    autoFetchStatus.value = status
+  })
+
+  /** 保存或删除视图都返回新的列表 */
+  const saveViews = (action: () => Promise<SavedView[]>): Promise<void> =>
+    guard(async () => {
+      config.value = { ...config.value, savedViews: await action() }
+    })
+
   /** 主进程按路径返回修改后的值，这里同步，不必重新扫描 */
   const updateProjects = (paths: string[], patch: ProjectPatch): Promise<void> =>
     guard(async () => {
@@ -314,13 +395,49 @@ export const useProjectsStore = defineStore('projects', () => {
         const project = find(path)
         if (project) Object.assign(project, meta)
       }
-      if (activeTag.value && !allTags.value.includes(activeTag.value)) activeTag.value = null
+      if (activeTag.value && !tagOptions.value.includes(activeTag.value)) activeTag.value = null
     })
 
   return {
     projects,
     moves,
     viewMode,
+    sortReverse,
+    sortBy,
+    hiddenColumns,
+    listColumns,
+    toggleColumn,
+    showActivity,
+    autoFetchStatus,
+    setAutoFetchMinutes: (minutes: number) =>
+      guard(async () => {
+        await window.api.setAutoFetchMinutes(minutes)
+        config.value = { ...config.value, autoFetchMinutes: minutes }
+      }),
+    setCloseToTray: (enabled: boolean) =>
+      guard(async () => {
+        await window.api.setCloseToTray(enabled)
+        config.value = { ...config.value, closeToTray: enabled }
+      }),
+    savedViews,
+    activeViewId,
+    applyView,
+    saveCurrentView: (name: string) =>
+      saveViews(() =>
+        window.api.saveView({
+          name,
+          filter: filter.value,
+          scope: scope.value,
+          activeTag: activeTag.value,
+          query: query.value,
+          sort: sort.value,
+          sortReverse: sortReverse.value
+        })
+      ),
+    deleteView: (id: string) => saveViews(() => window.api.deleteView(id)),
+    renameTag: (from: string, to: string) => run(() => window.api.renameTag(from, to)),
+    deleteTag: (tag: string) => run(() => window.api.deleteTag(tag)),
+    recomputeStats: () => guard(() => window.api.recomputeStats()),
     quickJumpOpen,
     selected,
     selectedPaths,
@@ -426,6 +543,7 @@ export const useProjectsStore = defineStore('projects', () => {
         config.value = { ...config.value, theme }
       }),
     allTags,
+    tagOptions,
     filterCounts,
     visible,
     refresh,
@@ -464,7 +582,7 @@ export const useProjectsStore = defineStore('projects', () => {
         const saved = await window.api.setTags(path, tags)
         const project = find(path)
         if (project) project.tags = saved
-        if (activeTag.value && !allTags.value.includes(activeTag.value)) activeTag.value = null
+        if (activeTag.value && !tagOptions.value.includes(activeTag.value)) activeTag.value = null
       })
   }
 })

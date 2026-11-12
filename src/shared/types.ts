@@ -24,6 +24,7 @@ export interface GitStatus {
   unstaged: number
   untracked: number
   conflicted: number
+  stashCount: number
   lastCommit: LastCommit | null
   remotes: RemoteInfo[]
 }
@@ -46,6 +47,39 @@ export interface Project {
   categoryId: string | null
   /** 用户给项目起的具体名称，没有时为 null */
   remark: string | null
+  /** 后台统计的结果，还没算出来时为 null */
+  stats: ProjectStats | null
+}
+
+export interface LanguageLines {
+  name: string
+  lines: number
+}
+
+export interface ProjectStats {
+  /** 磁盘占用（字节），包含 .git */
+  size: number
+  /** 其中依赖和构建产物的占用 */
+  generatedSize: number
+  lines: number
+  /** 按行数从多到少 */
+  languages: LanguageLines[]
+  /** 项目太大，只统计了一部分 */
+  truncated: boolean
+  /** 毫秒时间戳 */
+  computedAt: number
+}
+
+/** 保存下来的筛选条件；取值在应用时再校验，旧版本留下的无效值会退回默认 */
+export interface SavedView {
+  id: string
+  name: string
+  filter: string
+  scope: string
+  activeTag: string | null
+  query: string
+  sort: string
+  sortReverse: boolean
 }
 
 export interface Category {
@@ -65,7 +99,33 @@ export interface Config {
   excluded: string[]
   categories: Category[]
   theme: ThemeSetting
+  /** 定时后台 Fetch 的间隔，0 表示关闭 */
+  autoFetchMinutes: number
+  /** 关闭窗口后留在托盘，定时 Fetch 继续运行 */
+  closeToTray: boolean
+  savedViews: SavedView[]
 }
+
+export const AUTO_FETCH_OPTIONS = [0, 15, 30, 60, 120]
+export const DEFAULT_AUTO_FETCH_MINUTES = 30
+
+export interface AutoFetchStatus {
+  /** 毫秒时间戳，还没运行过时为 null */
+  lastRun: number | null
+  succeeded: number
+  failed: { name: string; message: string }[]
+}
+
+export interface Readme {
+  name: string
+  content: string
+  markdown: boolean
+  /** 文件太大，只读取了开头 */
+  truncated: boolean
+}
+
+/** 每个项目每天的提交数，键分别是项目路径和 YYYY-MM-DD */
+export type Activity = Record<string, Record<string, number>>
 
 export interface ScanError {
   path: string

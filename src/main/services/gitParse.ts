@@ -2,7 +2,7 @@ import type { Branch, ChangedFile, CommitSummary, FileState, RepoChanges } from 
 import { sanitizeRemoteUrl } from '@shared/remotes'
 import type { GitStatus, LastCommit, RemoteInfo } from '@shared/types'
 
-export type ParsedStatus = Omit<GitStatus, 'lastCommit' | 'remotes'>
+export type ParsedStatus = Omit<GitStatus, 'lastCommit' | 'remotes' | 'stashCount'>
 
 /** 解析 `git remote -v`，同一远程只取 fetch 地址，origin 排最前 */
 export function parseRemotes(output: string): RemoteInfo[] {

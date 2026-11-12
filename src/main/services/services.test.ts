@@ -1,12 +1,18 @@
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'fs'
 import { join, resolve } from 'path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { flattenCategories } from '@shared/categories'
+import type { FetchAllItem } from '@shared/repo'
+import type { ProjectStats } from '@shared/types'
 import { readStatus, runGit } from './git'
 import { inspectProject, pairMoves, ProjectService } from './projects'
 import { scanRoot } from './scanner'
 import { isWithin, normalizeTags, parseExport, Store } from './store'
 import { detectTech } from './tech'
+import { countByDay } from './activity'
+import { AutoFetcher } from './autoFetch'
+import { computeStats, countLines, languageOf, StatsService } from './projectStats'
+import { pickReadme, readReadme, readReadmeImage } from './readme'
 
 // 放在项目内：不往系统临时目录写
 const tmpBase = resolve('.tmp-test')
@@ -19,6 +25,8 @@ const touch = (...segments: string[]): void => {
 }
 
 const dir = (...segments: string[]): string => join(tmp, ...segments)
+
+const noStats = { get: () => null, schedule: () => {} } as unknown as StatsService
 
 async function commit(cwd: string, message: string): Promise<void> {
   await runGit(cwd, ['add', '-A'])
@@ -98,7 +106,7 @@ describe('项目移动', () => {
     const store = new Store(dir('moves-store', 'store.json'))
     store.addRoot(root)
     store.setRemark(oldPath, '后端')
-    const service = new ProjectService(store)
+    const service = new ProjectService(store, noStats)
     expect((await service.snapshot()).moves).toEqual([])
 
     // 再克隆一份：旧路径还在，只是多了个副本
@@ -118,6 +126,216 @@ describe('项目移动', () => {
     const after = await service.snapshot()
     expect(after.moves).toEqual([])
     expect(after.projects.find((p) => p.path === newPath)?.remark).toBe('后端')
+  })
+})
+
+describe('定时 Fetch', () => {
+  const result = (ok: boolean): FetchAllItem => ({ path: 'p', name: 'a', ok, cancelled: false, message: ok ? '' : '失败' })
+
+  it('按间隔重复运行；关闭后不再运行', async () => {
+    vi.useFakeTimers()
+    try {
+      const fetchAll = vi.fn(async () => [result(true), result(false)])
+      const done = vi.fn()
+      const fetcher = new AutoFetcher(fetchAll, done)
+      fetcher.setInterval(30)
+      await vi.advanceTimersByTimeAsync(29 * 60_000)
+      expect(fetchAll).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(fetchAll).toHaveBeenCalledTimes(1)
+      expect(done.mock.calls[0][0]).toMatchObject({ succeeded: 1, failed: [{ name: 'a', message: '失败' }] })
+      await vi.advanceTimersByTimeAsync(30 * 60_000)
+      expect(fetchAll).toHaveBeenCalledTimes(2)
+      fetcher.setInterval(0)
+      await vi.advanceTimersByTimeAsync(120 * 60_000)
+      expect(fetchAll).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('上一次没结束不重复启动；失败后继续定时', async () => {
+    vi.useFakeTimers()
+    try {
+      let finish: (items: FetchAllItem[]) => void = () => {}
+      const fetchAll = vi
+        .fn<() => Promise<FetchAllItem[]>>()
+        .mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)))
+        .mockRejectedValueOnce(new Error('坏了'))
+        .mockResolvedValue([])
+      const fetcher = new AutoFetcher(fetchAll, () => {})
+      fetcher.setInterval(15)
+      await vi.advanceTimersByTimeAsync(15 * 60_000)
+      void fetcher.runNow()
+      expect(fetchAll).toHaveBeenCalledTimes(1)
+      finish([])
+      await vi.advanceTimersByTimeAsync(15 * 60_000)
+      expect(fetchAll).toHaveBeenCalledTimes(2)
+      expect(fetcher.status.failed[0].message).toBe('坏了')
+      await vi.advanceTimersByTimeAsync(15 * 60_000)
+      expect(fetchAll).toHaveBeenCalledTimes(3)
+      fetcher.setInterval(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe('项目统计', () => {
+  it('语言和行数', () => {
+    expect(languageOf('src/App.vue')).toBe('Vue')
+    expect(languageOf('a.MIN.js')).toBeNull()
+    expect(languageOf('package-lock.json')).toBeNull()
+    expect(countLines(Buffer.from(''))).toBe(0)
+    expect(countLines(Buffer.from('a\nb'))).toBe(2)
+    expect(countLines(Buffer.from('a\nb\n'))).toBe(2)
+  })
+
+  it('非 Git 目录：依赖单独计算，不算代码行', async () => {
+    const root = dir('stats-plain')
+    mkdirSync(join(root, 'node_modules', 'x'), { recursive: true })
+    writeFileSync(join(root, 'a.ts'), 'one\ntwo\n')
+    writeFileSync(join(root, 'b.py'), 'one\n')
+    writeFileSync(join(root, 'node_modules', 'x', 'c.js'), 'dependency\n')
+    const stats = await computeStats(root, 5)
+    expect(stats).toMatchObject({ lines: 3, generatedSize: 11, computedAt: 5, truncated: false })
+    expect(stats.size).toBe(8 + 4 + 11)
+    expect(stats.languages).toEqual([{ name: 'TypeScript', lines: 2 }, { name: 'Python', lines: 1 }])
+  })
+
+  it('Git 仓库只算受跟踪的文件，磁盘占用包含 .git', async () => {
+    const root = dir('stats-git')
+    mkdirSync(root)
+    await runGit(root, ['init'])
+    writeFileSync(join(root, 'tracked.go'), 'x\n')
+    await commit(root, 'init')
+    writeFileSync(join(root, 'untracked.go'), 'x\ny\nz\n')
+    const stats = await computeStats(root)
+    expect(stats.languages).toEqual([{ name: 'Go', lines: 1 }])
+    expect(stats.size).toBeGreaterThan(9)
+  })
+
+  it('已缓存且没过期的不重算，force 时重算；结果写入文件', async () => {
+    const file = dir('stats-cache', 'stats.json')
+    const value = (computedAt: number): ProjectStats => ({
+      size: 1, generatedSize: 0, lines: 0, languages: [], truncated: false, computedAt
+    })
+    const compute = vi.fn(async () => value(1000))
+    const service = new StatsService(file, compute)
+    const updates: string[] = []
+    service.onUpdate = (path) => updates.push(path)
+
+    service.schedule(['E:\\a', 'E:\\a'], false, 1000)
+    await service.whenIdle()
+    expect(compute).toHaveBeenCalledTimes(1)
+    expect(updates).toEqual(['E:\\a'])
+    expect(service.get('e:\\A')?.size).toBe(1)
+
+    service.schedule(['E:\\a'], false, 2000)
+    await service.whenIdle()
+    expect(compute).toHaveBeenCalledTimes(1)
+
+    service.schedule(['E:\\a'], true, 2000)
+    await service.whenIdle()
+    expect(compute).toHaveBeenCalledTimes(2)
+    expect(new StatsService(file, compute).get('E:\\a')?.computedAt).toBe(1000)
+  })
+
+  it('过期后重算', async () => {
+    const compute = vi.fn(async (): Promise<ProjectStats> => ({
+      size: 1, generatedSize: 0, lines: 0, languages: [], truncated: false, computedAt: 0
+    }))
+    const service = new StatsService(dir('stats-stale', 'stats.json'), compute)
+    service.schedule(['E:\\a'], false, 0)
+    await service.whenIdle()
+    service.schedule(['E:\\a'], false, 25 * 3_600_000)
+    await service.whenIdle()
+    expect(compute).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('提交活跃度', () => {
+  it('按本地日期计数', () => {
+    const first = new Date(2026, 9, 3, 23, 30).getTime() / 1000
+    const second = new Date(2026, 9, 4, 0, 30).getTime() / 1000
+    expect(countByDay(`${first}\n${first}\n${second}\n\n`)).toEqual({ '2026-10-03': 2, '2026-10-04': 1 })
+  })
+})
+
+describe('README', () => {
+  it('优先 README.md，不认其他文件', () => {
+    expect(pickReadme(['README.txt', 'readme.MD', 'a.md'])).toBe('readme.MD')
+    expect(pickReadme(['README', 'README.rst'])).toBe('README')
+    expect(pickReadme(['readme-old.md', 'docs'])).toBeNull()
+  })
+
+  it('读取内容；没有时返回 null', async () => {
+    const root = dir('readme-read')
+    mkdirSync(root)
+    expect(await readReadme(root)).toBeNull()
+    writeFileSync(join(root, 'README.md'), '# 标题')
+    expect(await readReadme(root)).toEqual({ name: 'README.md', content: '# 标题', markdown: true, truncated: false })
+  })
+
+  it('图片只读仓库内的图片文件', async () => {
+    const root = dir('readme-image')
+    mkdirSync(join(root, 'docs'), { recursive: true })
+    writeFileSync(join(root, 'docs', 'a.png'), 'png')
+    writeFileSync(join(root, 'secret.txt'), 'secret')
+    writeFileSync(join(tmp, 'outside.png'), 'outside')
+    expect(await readReadmeImage(root, 'docs/a.png')).toBe('data:image/png;base64,cG5n')
+    expect(await readReadmeImage(root, 'secret.txt')).toBeNull()
+    expect(await readReadmeImage(root, '../outside.png')).toBeNull()
+    expect(await readReadmeImage(root, join(tmp, 'outside.png'))).toBeNull()
+    expect(await readReadmeImage(root, 'missing.png')).toBeNull()
+  })
+})
+
+describe('Store 的视图和标签', () => {
+  const view = { name: '待处理', filter: 'changed', scope: 'all', activeTag: null, query: '', sort: 'name', sortReverse: true }
+
+  it('保存、同名覆盖、删除，重启后还在', () => {
+    const file = dir('views', 'store.json')
+    const store = new Store(file)
+    store.saveView(view)
+    const { id } = store.savedViews[0]
+    store.saveView({ ...view, filter: 'behind' })
+    expect(store.savedViews).toEqual([{ ...view, id, filter: 'behind' }])
+    expect(new Store(file).savedViews).toEqual(store.savedViews)
+    expect(() => store.saveView({ ...view, name: '  ' })).toThrow('视图无效')
+    store.deleteView(id)
+    expect(store.savedViews).toEqual([])
+  })
+
+  it('标签改名、合并和删除，覆盖所有项目', () => {
+    const store = new Store(dir('tags', 'store.json'))
+    store.setTags('E:\\a', ['vue', '后台'])
+    store.setTags('E:\\b', ['Vue', 'vue'])
+    store.setTags('E:\\c', ['其他'])
+    expect(store.tagUsage('vue')).toBe(2)
+
+    store.renameTag('vue', 'Vue')
+    expect(store.metaOf('E:\\a').tags).toEqual(['Vue', '后台'])
+    expect(store.metaOf('E:\\b').tags).toEqual(['Vue'])
+    expect(store.tagUsage('vue')).toBe(0)
+    expect(() => store.renameTag('Vue', '   ')).toThrow('标签名称不能为空')
+
+    store.deleteTag('Vue')
+    expect(store.metaOf('E:\\a').tags).toEqual(['后台'])
+    expect(store.metaOf('E:\\c').tags).toEqual(['其他'])
+  })
+
+  it('定时和托盘设置有默认值，无效值退回默认', () => {
+    const file = dir('settings', 'store.json')
+    const store = new Store(file)
+    expect([store.autoFetchMinutes, store.closeToTray]).toEqual([30, true])
+    store.setAutoFetchMinutes(0)
+    store.setCloseToTray(false)
+    const reopened = new Store(file)
+    expect([reopened.autoFetchMinutes, reopened.closeToTray]).toEqual([0, false])
+
+    writeFileSync(file, JSON.stringify({ autoFetchMinutes: 7 }))
+    expect(new Store(file).autoFetchMinutes).toBe(30)
   })
 })
 
@@ -343,7 +561,7 @@ describe('Store', () => {
     expect(reloaded.metaOf('E:\\p')).toMatchObject({ remark: '备注', categoryId: category.id })
 
     expect(() => parseExport('不是 JSON')).toThrow('不是有效的 JSON')
-    expect(() => parseExport('{"roots":[]}')).toThrow('不是项目代码看板导出的')
+    expect(() => parseExport('{"roots":[]}')).toThrow('不是 Code Management Tool 导出的')
   })
 
   it('主题：默认跟随系统，选择后重启保留，无效值退回默认', () => {
@@ -471,7 +689,7 @@ describe('ProjectService', () => {
     store.addManual(dir('svc-manual'))
     store.hide(dir('svc-root', 'two'))
 
-    const service = new ProjectService(store)
+    const service = new ProjectService(store, noStats)
     const snapshot = await service.snapshot()
 
     expect(snapshot.projects.map((p) => p.name).sort()).toEqual(['one', 'svc-manual'])
@@ -496,7 +714,7 @@ describe('ProjectService', () => {
     store.removeExcluded(dir('ex-root', 'keep'))
     store.addManual(dir('ex-root', 'skip', 'b'))
 
-    const service = new ProjectService(store)
+    const service = new ProjectService(store, noStats)
     const names = async (): Promise<string[]> =>
       (await service.snapshot()).projects.map((p) => p.name).sort()
 
@@ -514,7 +732,7 @@ describe('ProjectService', () => {
     store.addRoot(dir('已删除的根目录'))
     store.addManual(dir('svc2-manual'))
 
-    const snapshot = await new ProjectService(store).snapshot()
+    const snapshot = await new ProjectService(store, noStats).snapshot()
     expect(snapshot.scanErrors).toHaveLength(1)
     expect(snapshot.projects).toHaveLength(1)
   })

@@ -2,6 +2,7 @@
 import { computed, nextTick, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
+  Archive,
   ArrowDown,
   ArrowUp,
   ChevronDown,
@@ -14,6 +15,7 @@ import {
   FilePlus,
   Folder,
   GitCommitHorizontal,
+  HardDrive,
   Plus,
   Star,
   Tag,
@@ -29,7 +31,14 @@ import RemoteRow from '@renderer/components/RemoteRow.vue'
 import SelectBox from '@renderer/components/SelectBox.vue'
 import TechIcon from '@renderer/components/TechIcon.vue'
 import { startProjectDrag } from '@renderer/lib/projectDrag'
-import { branchLabel as labelOfBranch, changeCount, formatRelative } from '@renderer/lib/projectList'
+import {
+  branchLabel as labelOfBranch,
+  changeCount,
+  formatBytes,
+  formatRelative,
+  languageShares,
+  statsHint
+} from '@renderer/lib/projectList'
 import { techIcon } from '@renderer/lib/techIcons'
 import { useRemarkEditor } from '@renderer/lib/useRemarkEditor'
 import { useProjectsStore } from '@renderer/stores/projects'
@@ -70,6 +79,8 @@ const changeParts = computed(() => {
 })
 
 const displayName = computed(() => props.project.remark ?? props.project.name)
+const stats = computed(() => props.project.stats)
+const topLanguages = computed(() => (stats.value ? languageShares(stats.value).slice(0, 2) : []))
 
 const {
   editing: editingRemark,
@@ -233,6 +244,14 @@ function removeTag(tag: string): void {
           <span v-if="!changes" class="flex items-center gap-1 text-zinc-400">
             <CircleCheck :size="12" /> 工作区干净
           </span>
+          <span
+            v-if="git.stashCount"
+            class="flex items-center gap-1 tabular-nums text-zinc-500 dark:text-zinc-400"
+            title="暂存在 stash 里的改动"
+            data-testid="card-stash"
+          >
+            <Archive :size="12" /> {{ git.stashCount }} Stash
+          </span>
         </div>
         <div v-if="git.lastCommit" class="flex items-center gap-3 text-zinc-500 dark:text-zinc-400">
           <span class="flex min-w-0 flex-1 items-center gap-1" :title="git.lastCommit.subject">
@@ -266,6 +285,22 @@ function removeTag(tag: string): void {
           <Clock :size="12" /> 文件修改于 {{ formatRelative(project.lastActivity) }}
         </p>
       </template>
+
+      <p
+        v-if="stats"
+        class="flex items-center gap-1 text-zinc-500 dark:text-zinc-400"
+        :title="statsHint(stats)"
+        data-testid="card-stats"
+      >
+        <HardDrive :size="12" class="shrink-0 text-zinc-400" />
+        <span class="truncate">
+          {{ formatBytes(stats.size) }}
+          <template v-for="language in topLanguages" :key="language.name">
+            · {{ language.name }} {{ language.percent }}%
+          </template>
+          <template v-if="stats.lines"> · {{ stats.lines.toLocaleString('zh-CN') }} 行</template>
+        </span>
+      </p>
     </div>
 
     <!-- 底部：技术栈和标签在左，分类固定在右 -->

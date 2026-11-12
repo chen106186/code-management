@@ -15,6 +15,7 @@ import {
 import BranchPanel from '@renderer/components/repo/BranchPanel.vue'
 import ChangesPanel from '@renderer/components/repo/ChangesPanel.vue'
 import HistoryPanel from '@renderer/components/repo/HistoryPanel.vue'
+import RepoInfoPanel from '@renderer/components/repo/RepoInfoPanel.vue'
 import { useProjectsStore } from '@renderer/stores/projects'
 import { useRepoStore, type RepoTab } from '@renderer/stores/repo'
 
@@ -40,7 +41,8 @@ const changeCount = computed(() => {
 const tabs = computed<{ id: RepoTab; label: string }[]>(() => [
   { id: 'changes', label: changeCount.value ? `变更 ${changeCount.value}` : '变更' },
   { id: 'history', label: '历史' },
-  { id: 'branches', label: '分支' }
+  { id: 'branches', label: '分支' },
+  { id: 'info', label: '概览' }
 ])
 
 const onFocus = (): void => void repo.refresh()
@@ -157,7 +159,8 @@ onBeforeUnmount(() => {
     <main v-if="repo.changes" class="flex min-h-0 flex-1">
       <ChangesPanel v-if="repo.tab === 'changes'" />
       <HistoryPanel v-else-if="repo.tab === 'history'" />
-      <BranchPanel v-else />
+      <BranchPanel v-else-if="repo.tab === 'branches'" />
+      <RepoInfoPanel v-else />
     </main>
     <p v-else-if="!repo.error" class="py-16 text-center text-zinc-500">正在读取仓库…</p>
   </div>

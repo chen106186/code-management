@@ -2,7 +2,16 @@ import { randomUUID } from 'crypto'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
 import { dirname, resolve, sep } from 'path'
 import { subtreeIds } from '@shared/categories'
-import type { Category, Config, ProjectMetaValues, ProjectPatch, ThemeSetting } from '@shared/types'
+import {
+  AUTO_FETCH_OPTIONS,
+  DEFAULT_AUTO_FETCH_MINUTES,
+  type Category,
+  type Config,
+  type ProjectMetaValues,
+  type ProjectPatch,
+  type SavedView,
+  type ThemeSetting
+} from '@shared/types'
 
 export interface ProjectMeta {
   favorite?: boolean
@@ -28,6 +37,8 @@ const MAX_TAGS = 10
 const MAX_TAG_LENGTH = 20
 const MAX_CATEGORY_NAME_LENGTH = 40
 const MAX_REMARK_LENGTH = 60
+const MAX_VIEW_NAME_LENGTH = 30
+const MAX_QUERY_LENGTH = 200
 
 export function normalizePath(path: string): string {
   return resolve(path)
@@ -77,6 +88,33 @@ function parseCategories(value: unknown): Category[] {
   }))
 }
 
+/** 校验页面传来或文件里读到的视图；名称为空或字段类型不对时返回 null */
+function parseView(value: unknown, id: string): SavedView | null {
+  const raw = (value ?? {}) as Partial<SavedView>
+  const name = typeof raw.name === 'string' ? raw.name.trim().slice(0, MAX_VIEW_NAME_LENGTH) : ''
+  if (!name || typeof raw.filter !== 'string' || typeof raw.scope !== 'string' || typeof raw.sort !== 'string') {
+    return null
+  }
+  return {
+    id,
+    name,
+    filter: raw.filter,
+    scope: raw.scope,
+    activeTag: typeof raw.activeTag === 'string' ? raw.activeTag : null,
+    query: typeof raw.query === 'string' ? raw.query.slice(0, MAX_QUERY_LENGTH) : '',
+    sort: raw.sort,
+    sortReverse: raw.sortReverse === true
+  }
+}
+
+function parseViews(value: unknown): SavedView[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item) => {
+    const view = typeof item?.id === 'string' ? parseView(item, item.id) : null
+    return view ? [view] : []
+  })
+}
+
 function emptyData(): StoreData {
   return {
     version: 1,
@@ -86,12 +124,19 @@ function emptyData(): StoreData {
     excluded: [],
     categories: [],
     theme: 'system',
+    autoFetchMinutes: DEFAULT_AUTO_FETCH_MINUTES,
+    closeToTray: true,
+    savedViews: [],
     meta: {}
   }
 }
 
 export function isThemeSetting(value: unknown): value is ThemeSetting {
   return value === 'system' || value === 'light' || value === 'dark'
+}
+
+export function isAutoFetchMinutes(value: unknown): value is number {
+  return AUTO_FETCH_OPTIONS.includes(value as number)
 }
 
 function parseMeta(value: unknown): Record<string, ProjectMeta> {
@@ -109,6 +154,11 @@ function parseData(raw: Record<string, unknown>): StoreData {
     excluded: stringArray(raw.excluded),
     categories: parseCategories(raw.categories),
     theme: isThemeSetting(raw.theme) ? raw.theme : 'system',
+    autoFetchMinutes: isAutoFetchMinutes(raw.autoFetchMinutes)
+      ? raw.autoFetchMinutes
+      : DEFAULT_AUTO_FETCH_MINUTES,
+    closeToTray: raw.closeToTray !== false,
+    savedViews: parseViews(raw.savedViews),
     meta: parseMeta(raw.meta)
   }
 }
@@ -122,7 +172,7 @@ export function parseExport(text: string): StoreData {
     throw new Error('文件不是有效的 JSON')
   }
   if (!raw || typeof raw !== 'object' || (raw as { app?: unknown }).app !== EXPORT_APP) {
-    throw new Error('这不是项目代码看板导出的配置文件')
+    throw new Error('这不是 Code Management Tool 导出的配置文件')
   }
   return parseData(raw as Record<string, unknown>)
 }
@@ -174,7 +224,10 @@ export class Store {
       hidden: [...hidden],
       excluded: [...excluded],
       categories: this.categories,
-      theme: this.data.theme
+      theme: this.data.theme,
+      autoFetchMinutes: this.data.autoFetchMinutes,
+      closeToTray: this.data.closeToTray,
+      savedViews: this.savedViews
     }
   }
 
@@ -236,6 +289,67 @@ export class Store {
 
   setTheme(theme: ThemeSetting): void {
     this.data.theme = theme
+    this.save()
+  }
+
+  get autoFetchMinutes(): number {
+    return this.data.autoFetchMinutes
+  }
+
+  setAutoFetchMinutes(minutes: number): void {
+    this.data.autoFetchMinutes = minutes
+    this.save()
+  }
+
+  get closeToTray(): boolean {
+    return this.data.closeToTray
+  }
+
+  setCloseToTray(enabled: boolean): void {
+    this.data.closeToTray = enabled
+    this.save()
+  }
+
+  get savedViews(): SavedView[] {
+    return this.data.savedViews.map((view) => ({ ...view }))
+  }
+
+  /** 同名视图保留原来的 id 和位置，内容被覆盖 */
+  saveView(value: unknown): void {
+    const view = parseView(value, randomUUID())
+    if (!view) throw new Error('视图无效')
+    const index = this.data.savedViews.findIndex((v) => v.name === view.name)
+    if (index >= 0) this.data.savedViews[index] = { ...view, id: this.data.savedViews[index].id }
+    else this.data.savedViews.push(view)
+    this.save()
+  }
+
+  deleteView(id: string): void {
+    this.data.savedViews = this.data.savedViews.filter((view) => view.id !== id)
+    this.save()
+  }
+
+  /** 使用这个标签的项目数，包括已隐藏和当前不在列表里的项目 */
+  tagUsage(tag: string): number {
+    return Object.values(this.data.meta).filter((meta) => stringArray(meta.tags).includes(tag)).length
+  }
+
+  /** 改名后和已有标签相同就合并成一个；顺序保持在原来的位置 */
+  renameTag(from: string, to: string): void {
+    const [name] = normalizeTags([to])
+    if (!name) throw new Error('标签名称不能为空')
+    for (const meta of Object.values(this.data.meta)) {
+      const tags = stringArray(meta.tags)
+      if (tags.includes(from)) meta.tags = normalizeTags(tags.map((t) => (t === from ? name : t)))
+    }
+    this.save()
+  }
+
+  deleteTag(tag: string): void {
+    for (const meta of Object.values(this.data.meta)) {
+      const tags = stringArray(meta.tags)
+      if (tags.includes(tag)) meta.tags = tags.filter((t) => t !== tag)
+    }
     this.save()
   }
 

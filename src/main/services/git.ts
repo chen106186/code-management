@@ -94,7 +94,13 @@ async function fullStatus(cwd: string, output: string): Promise<GitStatus> {
   const lastCommit = status.head
     ? parseLastCommit(await runGit(cwd, ['log', '-1', `--format=${LAST_COMMIT_FORMAT}`]))
     : null
-  return { ...status, lastCommit, remotes: await readRemotes(cwd) }
+  const stashes = status.head ? await runGit(cwd, ['stash', 'list', '--format=%h']) : ''
+  return {
+    ...status,
+    stashCount: stashes.split('\n').filter(Boolean).length,
+    lastCommit,
+    remotes: await readRemotes(cwd)
+  }
 }
 
 export async function readStatus(cwd: string): Promise<GitStatus> {

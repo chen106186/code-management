@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { ArrowDown, ArrowUp, CircleAlert, CircleCheck, FilePen, Folder, Star } from 'lucide-vue-next'
+import { Archive, ArrowDown, ArrowUp, CircleAlert, CircleCheck, FilePen, Folder, Star } from 'lucide-vue-next'
 import type { Project } from '@shared/types'
 import BranchSwitcher from '@renderer/components/BranchSwitcher.vue'
 import ProjectActions from '@renderer/components/ProjectActions.vue'
@@ -9,7 +9,14 @@ import RemoteRow from '@renderer/components/RemoteRow.vue'
 import SelectBox from '@renderer/components/SelectBox.vue'
 import TechIcon from '@renderer/components/TechIcon.vue'
 import { startProjectDrag } from '@renderer/lib/projectDrag'
-import { branchLabel, changeCount, formatRelative } from '@renderer/lib/projectList'
+import {
+  branchLabel,
+  changeCount,
+  formatBytes,
+  formatRelative,
+  languageShares,
+  statsHint
+} from '@renderer/lib/projectList'
 import { useRemarkEditor } from '@renderer/lib/useRemarkEditor'
 import { useProjectsStore } from '@renderer/stores/projects'
 
@@ -33,6 +40,10 @@ const otherRemotes = computed(() =>
     .filter((remote) => remote !== mainRemote.value)
     .map((remote) => `${remote.name}：${remote.url}`)
 )
+const stats = computed(() => props.project.stats)
+const topLanguages = computed(() => (stats.value ? languageShares(stats.value).slice(0, 4) : []))
+const firstGitColumn = computed(() => store.listColumns.find((column) => column.gitOnly)?.id)
+const gitColumnCount = computed(() => store.listColumns.filter((column) => column.gitOnly).length)
 
 const {
   editing: editingRemark,
@@ -109,20 +120,26 @@ function openRepo(): void {
       </p>
     </div>
 
-    <p
-      v-if="problem"
-      class="col-span-4 flex min-w-0 items-center gap-1.5 text-red-600 dark:text-red-400"
-      :title="problem"
-    >
-      <CircleAlert :size="13" class="shrink-0" />
-      <span class="truncate">{{ problem }}</span>
-    </p>
+    <template v-for="column in store.listColumns" :key="column.id">
+      <template v-if="column.gitOnly && !git">
+        <!-- 这些列在没有 Git 信息的项目上合并成一条说明 -->
+        <p
+          v-if="column.id === firstGitColumn"
+          class="flex min-w-0 items-center gap-1.5"
+          :class="problem ? 'text-red-600 dark:text-red-400' : 'text-zinc-400'"
+          :style="{ gridColumn: `span ${gitColumnCount}` }"
+          :title="problem ?? undefined"
+        >
+          <CircleAlert v-if="problem" :size="13" class="shrink-0" />
+          <span class="truncate">{{ problem ?? '未使用 Git' }}</span>
+        </p>
+      </template>
 
-    <template v-else-if="git">
-      <div class="flex min-w-0 items-center">
+      <div v-else-if="column.id === 'branch' && git" class="flex min-w-0 items-center">
         <BranchSwitcher :project="project" :label="branchLabel(git)" />
       </div>
-      <div class="flex min-w-0 items-center gap-2 tabular-nums">
+
+      <div v-else-if="column.id === 'status' && git" class="flex min-w-0 items-center gap-2 tabular-nums">
         <span v-if="git.ahead" class="flex items-center text-teal-700 dark:text-teal-400" :title="`领先上游 ${git.ahead} 个提交`">
           <ArrowUp :size="12" />{{ git.ahead }}
         </span>
@@ -132,37 +149,77 @@ function openRepo(): void {
         <span v-if="changes" class="flex items-center gap-0.5 text-amber-700 dark:text-amber-400" :title="`${changes} 个文件有改动`">
           <FilePen :size="12" />{{ changes }}
         </span>
-        <span v-else-if="!git.ahead && !git.behind" class="text-zinc-400" title="工作区干净">
+        <span
+          v-if="git.stashCount"
+          class="flex items-center gap-0.5 text-zinc-500 dark:text-zinc-400"
+          :title="`${git.stashCount} 个 stash`"
+          data-testid="row-stash"
+        >
+          <Archive :size="12" />{{ git.stashCount }}
+        </span>
+        <span v-if="!changes && !git.ahead && !git.behind && !git.stashCount" class="text-zinc-400" title="工作区干净">
           <CircleCheck :size="12" />
         </span>
       </div>
-      <div v-if="mainRemote" class="flex min-w-0 items-center gap-1">
-        <RemoteRow
-          :project-path="project.path"
-          :remote="mainRemote"
-          :show-name="false"
-          short
-          class="min-w-0 flex-1"
-        />
-        <span
-          v-if="otherRemotes.length"
-          class="shrink-0 rounded bg-zinc-100 px-1 text-[11px] text-zinc-500 dark:bg-zinc-700/60 dark:text-zinc-400"
-          :title="otherRemotes.join('\n')"
-        >
-          +{{ otherRemotes.length }}
-        </span>
-      </div>
-      <span v-else class="truncate text-zinc-400">未配置</span>
-      <span class="min-w-0 truncate text-zinc-500 dark:text-zinc-400" :title="git.lastCommit?.subject">
-        {{ git.lastCommit?.subject ?? '尚无提交' }}
+
+      <template v-else-if="column.id === 'remote'">
+        <div v-if="mainRemote" class="flex min-w-0 items-center gap-1">
+          <RemoteRow
+            :project-path="project.path"
+            :remote="mainRemote"
+            :show-name="false"
+            short
+            class="min-w-0 flex-1"
+          />
+          <span
+            v-if="otherRemotes.length"
+            class="shrink-0 rounded bg-zinc-100 px-1 text-[11px] text-zinc-500 dark:bg-zinc-700/60 dark:text-zinc-400"
+            :title="otherRemotes.join('\n')"
+          >
+            +{{ otherRemotes.length }}
+          </span>
+        </div>
+        <span v-else class="truncate text-zinc-400">未配置</span>
+      </template>
+
+      <span
+        v-else-if="column.id === 'commit'"
+        class="min-w-0 truncate text-zinc-500 dark:text-zinc-400"
+        :title="git?.lastCommit?.subject"
+      >
+        {{ git?.lastCommit?.subject ?? '尚无提交' }}
+      </span>
+
+      <span
+        v-else-if="column.id === 'language'"
+        class="min-w-0 truncate text-zinc-500 dark:text-zinc-400"
+        :title="topLanguages.map((l) => `${l.name} ${l.percent}%`).join('，')"
+        data-testid="row-language"
+      >
+        {{ topLanguages[0]?.name ?? '' }}
+      </span>
+
+      <span
+        v-else-if="column.id === 'lines'"
+        class="truncate text-right tabular-nums text-zinc-500 dark:text-zinc-400"
+        data-testid="row-lines"
+      >
+        {{ stats ? stats.lines.toLocaleString('zh-CN') : '' }}
+      </span>
+
+      <span
+        v-else-if="column.id === 'size'"
+        class="truncate text-right tabular-nums text-zinc-500 dark:text-zinc-400"
+        :title="stats ? statsHint(stats) : '正在后台统计'"
+        data-testid="row-size"
+      >
+        {{ stats ? formatBytes(stats.size) : '' }}
+      </span>
+
+      <span v-else-if="column.id === 'activity'" class="truncate text-right text-zinc-400">
+        {{ project.lastActivity ? formatRelative(project.lastActivity) : '' }}
       </span>
     </template>
-
-    <span v-else class="col-span-4 min-w-0 truncate text-zinc-400">未使用 Git</span>
-
-    <span class="truncate text-right text-zinc-400">
-      {{ project.lastActivity ? formatRelative(project.lastActivity) : '' }}
-    </span>
 
     <ProjectActions
       v-if="!editingRemark"

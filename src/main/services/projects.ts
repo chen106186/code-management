@@ -3,6 +3,7 @@ import { basename, join } from 'path'
 import { remoteIdentity } from '@shared/remotes'
 import type { GitStatus, Project, ProjectMove, ScanError, Snapshot } from '@shared/types'
 import { readStatus } from './git'
+import type { StatsService } from './projectStats'
 import { latestModified, scanRoot } from './scanner'
 import { isWithin, pathKey, type Store } from './store'
 import { detectTech, type PackageJson } from './tech'
@@ -45,7 +46,7 @@ function describeGitError(message: string): string {
 
 export async function inspectProject(
   path: string
-): Promise<Omit<Project, 'favorite' | 'tags' | 'categoryId' | 'remark'>> {
+): Promise<Omit<Project, 'favorite' | 'tags' | 'categoryId' | 'remark' | 'stats'>> {
   const base = { path, name: basename(path) || path }
 
   let names: string[]
@@ -117,8 +118,18 @@ export class ProjectService {
   private known = new Set<string>()
   /** 最近一次快照给出的迁移建议，确认时只接受这些 */
   private moves: ProjectMove[] = []
+  private statsPaths: string[] = []
 
-  constructor(private readonly store: Store) {}
+  onSnapshot: (snapshot: Snapshot) => void = () => {}
+
+  constructor(
+    private readonly store: Store,
+    private readonly stats: StatsService
+  ) {}
+
+  recomputeStats(): void {
+    this.stats.schedule(this.statsPaths, true)
+  }
 
   isKnown(path: string): boolean {
     return this.known.has(pathKey(path))
@@ -171,7 +182,8 @@ export class ProjectService {
 
     const projects = await mapLimit(visible, CONCURRENCY, async (path) => ({
       ...(await inspectProject(path)),
-      ...this.store.metaOf(path)
+      ...this.store.metaOf(path),
+      stats: this.stats.get(path)
     }))
 
     this.store.trackProjects(
@@ -186,6 +198,10 @@ export class ProjectService {
       name: basename(path) || path,
       remark: this.store.metaOf(path).remark
     }))
-    return { projects, hiddenProjects, config, scanErrors, moves: this.moves }
+    const snapshot = { projects, hiddenProjects, config, scanErrors, moves: this.moves }
+    this.statsPaths = projects.filter((p) => !p.missing).map((p) => p.path)
+    this.stats.schedule(this.statsPaths)
+    this.onSnapshot(snapshot)
+    return snapshot
   }
 }

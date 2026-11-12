@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
+  ArrowDown,
+  ArrowUp,
   ArrowUpDown,
+  CalendarDays,
   CircleAlert,
   CloudDownload,
   FolderMinus,
@@ -15,15 +18,25 @@ import {
   Star,
   X
 } from 'lucide-vue-next'
+import ActivityHeatmap from '@renderer/components/ActivityHeatmap.vue'
 import BatchBar from '@renderer/components/BatchBar.vue'
 import BoardStats from '@renderer/components/BoardStats.vue'
 import CategorySidebar from '@renderer/components/CategorySidebar.vue'
+import ColumnPicker from '@renderer/components/ColumnPicker.vue'
 import HiddenProjects from '@renderer/components/HiddenProjects.vue'
 import MoveSuggestions from '@renderer/components/MoveSuggestions.vue'
 import ProjectCard from '@renderer/components/ProjectCard.vue'
 import ProjectRow from '@renderer/components/ProjectRow.vue'
 import SettingsDrawer from '@renderer/components/SettingsDrawer.vue'
-import { FILTERS, SCOPE_HIDDEN, type SortKind, type ViewMode } from '@renderer/lib/projectList'
+import {
+  FILTERS,
+  listLayout,
+  SCOPE_HIDDEN,
+  SORTS,
+  sortsDescending,
+  type SortKind,
+  type ViewMode
+} from '@renderer/lib/projectList'
 import { useProjectsStore } from '@renderer/stores/projects'
 
 const store = useProjectsStore()
@@ -40,11 +53,12 @@ const VIEWS: { mode: ViewMode; label: string; icon: typeof Star }[] = [
   { mode: 'list', label: '列表视图', icon: List }
 ]
 
-const SORTS: { kind: SortKind; label: string }[] = [
-  { kind: 'activity', label: '最近活跃' },
-  { kind: 'changes', label: '改动最多' },
-  { kind: 'name', label: '名称' }
-]
+const layout = computed(() => listLayout(store.listColumns))
+
+const sortHint = (kind: SortKind): string => {
+  if (store.sort !== kind) return '点击按这一列排序，收藏仍排在最前'
+  return store.sortReverse ? '当前为反向排序，点击恢复' : '点击反向排序'
+}
 
 const fetchSummaryText = computed(() => {
   const summary = store.fetchSummary
@@ -149,22 +163,41 @@ onBeforeUnmount(() => {
         </button>
 
         <select
-          v-if="store.allTags.length"
+          v-if="store.tagOptions.length"
           v-model="store.activeTag"
-          aria-label="按标签筛选"
+          aria-label="按标签或技术栈筛选"
+          data-testid="tag-filter"
           class="field ml-1 h-7"
         >
           <option :value="null">所有标签</option>
-          <option v-for="tag in store.allTags" :key="tag" :value="tag">{{ tag }}</option>
+          <option v-for="tag in store.tagOptions" :key="tag" :value="tag">{{ tag }}</option>
         </select>
 
         <label class="ml-auto flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400">
           <ArrowUpDown :size="13" />
           <span class="sr-only">排序</span>
-          <select v-model="store.sort" class="field h-7">
+          <select
+            :value="store.sort"
+            class="field h-7"
+            data-testid="sort-select"
+            @change="store.sortBy(($event.target as HTMLSelectElement).value as SortKind)"
+          >
             <option v-for="{ kind, label } in SORTS" :key="kind" :value="kind">{{ label }}</option>
           </select>
         </label>
+
+        <button
+          class="icon-btn ml-1"
+          :class="store.showActivity ? 'bg-zinc-200/70 text-zinc-900 dark:bg-zinc-700 dark:text-zinc-100' : ''"
+          title="提交活跃度"
+          aria-label="提交活跃度"
+          :aria-pressed="store.showActivity"
+          data-testid="toggle-activity"
+          @click="store.showActivity = !store.showActivity"
+        >
+          <CalendarDays :size="15" />
+        </button>
+        <ColumnPicker v-if="store.viewMode === 'list'" />
 
         <div role="radiogroup" aria-label="视图" class="ml-1 flex rounded-md bg-zinc-200/70 p-0.5 dark:bg-zinc-900/60">
           <button
@@ -187,6 +220,8 @@ onBeforeUnmount(() => {
           </button>
         </div>
       </div>
+
+      <ActivityHeatmap v-if="store.showActivity && store.scope !== SCOPE_HIDDEN && store.projects.length" />
     </header>
 
     <MoveSuggestions v-if="store.moves.length" />
@@ -251,7 +286,10 @@ onBeforeUnmount(() => {
       </p>
 
       <!-- 窗口太窄时横向滚动，不把各列挤得看不清 -->
-      <div v-else-if="store.viewMode === 'list'" class="min-w-[52rem]">
+      <div
+        v-else-if="store.viewMode === 'list'"
+        :style="{ '--project-columns': layout.template, minWidth: layout.minWidth }"
+      >
         <!-- 外层和页面同色并盖住上边距，滚动的行不会从表头上方或圆角处露出来 -->
         <div class="sticky -top-4 z-10 -mt-4 bg-zinc-50 pt-4 dark:bg-zinc-900">
           <div
@@ -260,12 +298,25 @@ onBeforeUnmount(() => {
           >
             <span class="text-right">序号</span>
             <span class="col-span-3" />
-            <span>名称</span>
-            <span>分支</span>
-            <span>状态</span>
-            <span>Git 地址</span>
-            <span>最近提交</span>
-            <span class="text-right">活跃</span>
+            <button
+              v-for="column in [{ id: 'name', label: '名称', sort: 'name' as SortKind, alignRight: false }, ...store.listColumns]"
+              :key="column.id"
+              class="flex min-w-0 items-center gap-0.5 rounded hover:text-zinc-900 dark:hover:text-zinc-100"
+              :class="[
+                column.alignRight ? 'justify-end' : '',
+                store.sort === column.sort ? 'text-zinc-900 dark:text-zinc-100' : ''
+              ]"
+              :title="sortHint(column.sort)"
+              :aria-pressed="store.sort === column.sort"
+              :data-testid="`header-${column.id}`"
+              @click="store.sortBy(column.sort)"
+            >
+              <span class="truncate">{{ column.label }}</span>
+              <template v-if="store.sort === column.sort">
+                <ArrowDown v-if="sortsDescending(column.sort, store.sortReverse)" :size="11" class="shrink-0" />
+                <ArrowUp v-else :size="11" class="shrink-0" />
+              </template>
+            </button>
           </div>
         </div>
         <ul

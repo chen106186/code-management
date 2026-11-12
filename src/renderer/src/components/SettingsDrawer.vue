@@ -1,12 +1,33 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
-import { CircleAlert, Download, FolderMinus, FolderPlus, Trash2, Upload, X } from 'lucide-vue-next'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { CircleAlert, Download, FolderMinus, FolderPlus, RefreshCw, Trash2, Upload, X } from 'lucide-vue-next'
+import { AUTO_FETCH_OPTIONS } from '@shared/types'
+import TagManager from '@renderer/components/TagManager.vue'
+import { formatRelative } from '@renderer/lib/projectList'
 import { useProjectsStore } from '@renderer/stores/projects'
 
 const emit = defineEmits<{ close: [] }>()
 const store = useProjectsStore()
 
 const backupNotice = ref('')
+const statsNotice = ref('')
+
+const intervalLabel = (minutes: number): string => {
+  if (!minutes) return '关闭'
+  return minutes < 60 ? `每 ${minutes} 分钟` : `每 ${minutes / 60} 小时`
+}
+
+const lastFetchText = computed(() => {
+  const { lastRun, succeeded, failed } = store.autoFetchStatus
+  if (lastRun === null) return '本次启动后还没有运行过'
+  const result = failed.length ? `成功 ${succeeded} 个，失败 ${failed.length} 个` : `成功 ${succeeded} 个`
+  return `上次运行：${formatRelative(lastRun)}，${result}`
+})
+
+function recomputeStats(): void {
+  void store.recomputeStats()
+  statsNotice.value = '已开始重新统计，结果会陆续更新'
+}
 
 async function exportConfig(): Promise<void> {
   const path = await store.exportConfig()
@@ -112,9 +133,68 @@ function errorOf(path: string): string | undefined {
       </section>
 
       <section class="space-y-2">
+        <h3 class="font-medium">后台运行</h3>
+        <label class="flex items-center justify-between gap-2">
+          <span>自动 Fetch</span>
+          <select
+            class="field h-7"
+            data-testid="auto-fetch-minutes"
+            :value="store.config.autoFetchMinutes"
+            @change="store.setAutoFetchMinutes(Number(($event.target as HTMLSelectElement).value))"
+          >
+            <option v-for="minutes in AUTO_FETCH_OPTIONS" :key="minutes" :value="minutes">
+              {{ intervalLabel(minutes) }}
+            </option>
+          </select>
+        </label>
+        <p class="text-xs text-zinc-500 dark:text-zinc-400">
+          只更新远程跟踪分支，不改动工作区和本地分支；需要输入密码的仓库会跳过。
+        </p>
+        <p class="text-xs text-zinc-500 dark:text-zinc-400" data-testid="auto-fetch-status">{{ lastFetchText }}</p>
+        <ul v-if="store.autoFetchStatus.failed.length" class="space-y-0.5 text-xs text-red-600 dark:text-red-400">
+          <li
+            v-for="item in store.autoFetchStatus.failed"
+            :key="item.name"
+            class="truncate"
+            :title="item.message"
+          >
+            {{ item.name }}：{{ item.message }}
+          </li>
+        </ul>
+        <label class="flex items-start gap-2">
+          <input
+            type="checkbox"
+            class="mt-0.5 accent-teal-600"
+            data-testid="close-to-tray"
+            :checked="store.config.closeToTray"
+            @change="store.setCloseToTray(($event.target as HTMLInputElement).checked)"
+          />
+          <span>
+            关闭窗口后留在托盘
+            <span class="block text-xs text-zinc-500 dark:text-zinc-400">
+              自动 Fetch 继续运行，有项目落后远程时发通知；从托盘菜单退出。
+            </span>
+          </span>
+        </label>
+      </section>
+
+      <section class="space-y-2">
+        <h3 class="font-medium">项目统计</h3>
+        <p class="text-xs text-zinc-500 dark:text-zinc-400">
+          磁盘占用、代码行数和语言占比在后台统计，每天自动更新一次。
+        </p>
+        <button class="btn h-7 text-xs" data-testid="recompute-stats" @click="recomputeStats">
+          <RefreshCw :size="13" /> 重新统计
+        </button>
+        <p v-if="statsNotice" role="status" class="text-xs text-teal-700 dark:text-teal-400">{{ statsNotice }}</p>
+      </section>
+
+      <TagManager />
+
+      <section class="space-y-2">
         <h3 class="font-medium">备份配置</h3>
         <p class="text-xs text-zinc-500 dark:text-zinc-400">
-          导出根目录、分类、备注、标签和收藏，可用于备份或换电脑。导入会替换当前全部配置，替换前自动备份。
+          导出根目录、分类、备注、标签、收藏和视图，可用于备份或换电脑。导入会替换当前全部配置，替换前自动备份。
         </p>
         <div class="flex gap-2">
           <button class="btn h-7 text-xs" data-testid="export-config" @click="exportConfig">
