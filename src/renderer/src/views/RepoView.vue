@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowDown,
+  ArrowDownToLine,
   ArrowLeft,
   ArrowUp,
   CircleAlert,
@@ -32,6 +33,12 @@ const branchLabel = computed(() => {
   const s = status.value
   if (!s) return ''
   return s.branch ?? `游离 ${s.head?.slice(0, 7) ?? ''}`
+})
+const pullTitle = computed(() => {
+  const s = status.value
+  if (s && !s.branch) return '游离 HEAD 时不能拉取'
+  if (s && !s.upstream) return '当前分支没有上游分支，不能拉取'
+  return `从 ${s?.upstream ?? '上游'} 拉取并快进当前分支；本地也有新提交或会覆盖未提交的改动时不会拉取`
 })
 const changeCount = computed(() => {
   const c = repo.changes
@@ -100,6 +107,18 @@ onBeforeUnmount(() => {
         >
           <CloudDownload :size="14" /> Fetch
         </button>
+        <button
+          class="btn"
+          :disabled="!!repo.fetching || !status?.upstream"
+          :title="pullTitle"
+          data-testid="pull"
+          @click="repo.pullRemote()"
+        >
+          <ArrowDownToLine :size="14" /> 拉取<span
+            v-if="status?.behind"
+            class="text-xs text-amber-700 dark:text-amber-400"
+          >{{ status.behind }}</span>
+        </button>
       </div>
 
       <nav class="-mb-px flex gap-1" aria-label="仓库视图">
@@ -127,7 +146,7 @@ onBeforeUnmount(() => {
       class="flex shrink-0 items-center gap-2 bg-zinc-100 px-4 py-1.5 dark:bg-zinc-800"
     >
       <LoaderCircle :size="14" class="shrink-0 animate-spin text-zinc-500" />
-      <span class="shrink-0">正在 Fetch</span>
+      <span class="shrink-0">{{ repo.fetching.kind === 'pull' ? '正在拉取' : '正在 Fetch' }}</span>
       <span class="min-w-0 flex-1 truncate font-mono text-xs text-zinc-500 dark:text-zinc-400">{{ repo.fetching.line }}</span>
       <button class="btn h-6 text-xs" @click="repo.cancelFetch()">取消</button>
     </div>

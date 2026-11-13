@@ -13,6 +13,11 @@ import { errorMessage } from '@renderer/lib/errors'
 const LOG_PAGE = 100
 
 export type RepoTab = 'changes' | 'history' | 'branches' | 'info'
+export type RemoteKind = 'fetch' | 'pull'
+
+/** 英文和中文之间留空格：Fetch 完成、拉取完成 */
+const remoteText = (kind: RemoteKind, text: string): string =>
+  kind === 'fetch' ? `Fetch ${text}` : `拉取${text}`
 type ChangeTarget = Extract<DiffTarget, { kind: 'staged' | 'unstaged' }>
 
 export const useRepoStore = defineStore('repo', () => {
@@ -33,7 +38,8 @@ export const useRepoStore = defineStore('repo', () => {
   const commitDetail = ref<CommitDetail | null>(null)
   const commitTarget = ref<DiffTarget | null>(null)
 
-  const fetching = ref<{ opId: string; line: string } | null>(null)
+  /** 正在进行的远程操作；同一时间只允许一个 */
+  const fetching = ref<{ kind: RemoteKind; opId: string; line: string } | null>(null)
 
   let refreshId = 0
   let logHead: string | null | undefined
@@ -134,21 +140,21 @@ export const useRepoStore = defineStore('repo', () => {
     changeTarget.value = { kind, path: file.path, origPath: file.origPath }
   }
 
-  async function fetchRemote(): Promise<void> {
+  async function runRemote(kind: RemoteKind): Promise<void> {
     const repo = path.value
     if (!repo || fetching.value) return
-    const opId = `fetch-${Date.now()}`
-    fetching.value = { opId, line: '' }
+    const opId = `${kind}-${Date.now()}`
+    fetching.value = { kind, opId, line: '' }
     error.value = null
     notice.value = null
     const off = window.api.onRemoteProgress((progress) => {
       if (fetching.value?.opId === progress.opId) fetching.value.line = progress.line
     })
     try {
-      const result = await window.api.fetchRepo(repo, opId)
-      if (result.cancelled) notice.value = 'Fetch 已取消'
-      else if (result.ok) notice.value = 'Fetch 完成'
-      else error.value = `Fetch 失败：${result.message}`
+      const result = await (kind === 'pull' ? window.api.pullRepo(repo, opId) : window.api.fetchRepo(repo, opId))
+      if (result.cancelled) notice.value = remoteText(kind, '已取消')
+      else if (result.ok) notice.value = remoteText(kind, '完成')
+      else error.value = `${remoteText(kind, '失败')}：${result.message}`
     } catch (e) {
       error.value = errorMessage(e)
     } finally {
@@ -157,6 +163,9 @@ export const useRepoStore = defineStore('repo', () => {
     }
     await refresh()
   }
+
+  const fetchRemote = (): Promise<void> => runRemote('fetch')
+  const pullRemote = (): Promise<void> => runRemote('pull')
 
   function cancelFetch(): void {
     if (fetching.value) void window.api.cancelRemote(fetching.value.opId)
@@ -216,6 +225,7 @@ export const useRepoStore = defineStore('repo', () => {
     selectCommitFile,
     loadMoreCommits,
     fetchRemote,
+    pullRemote,
     cancelFetch
   }
 })

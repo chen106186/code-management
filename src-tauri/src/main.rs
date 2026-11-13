@@ -81,6 +81,29 @@ fn open_external(app: &AppHandle, url: &tauri::Url) {
     }
 }
 
+/// 页面左上角已经有图标和名称，标题栏里不再画一遍；窗口标题保留，任务栏和 Alt+Tab 仍显示名称
+#[cfg(windows)]
+fn hide_caption(window: &tauri::WebviewWindow) {
+    #[repr(C)]
+    struct WtaOptions {
+        flags: u32,
+        mask: u32,
+    }
+    #[link(name = "uxtheme")]
+    extern "system" {
+        fn SetWindowThemeAttribute(hwnd: *mut std::ffi::c_void, attribute: i32, value: *const WtaOptions, size: u32) -> i32;
+    }
+    const WTA_NONCLIENT: i32 = 1;
+    const WTNCA_NODRAWCAPTION: u32 = 0x1;
+    const WTNCA_NODRAWICON: u32 = 0x2;
+    let Ok(hwnd) = window.hwnd() else { return };
+    let options = WtaOptions { flags: WTNCA_NODRAWCAPTION | WTNCA_NODRAWICON, mask: WTNCA_NODRAWCAPTION | WTNCA_NODRAWICON };
+    // 失败时只是标题栏照常显示，不影响使用
+    unsafe {
+        SetWindowThemeAttribute(hwnd.0, WTA_NONCLIENT, &options, std::mem::size_of::<WtaOptions>() as u32);
+    }
+}
+
 fn create_window(app: &AppHandle) -> tauri::Result<()> {
     let navigation_app = app.clone();
     let popup_app = app.clone();
@@ -107,6 +130,8 @@ fn create_window(app: &AppHandle) -> tauri::Result<()> {
             tauri::webview::NewWindowResponse::Deny
         })
         .build()?;
+    #[cfg(windows)]
+    hide_caption(&window);
     // 页面加载出错时也要让窗口出来，否则进程留在后台，用户什么也看不到
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_secs(5)).await;

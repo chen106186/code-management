@@ -1,5 +1,6 @@
-use crate::git::git_command;
+use crate::git::{git_command, run_git};
 use crate::git_ops::list_remotes;
+use crate::git_parse::parse_status;
 use crate::types::RemoteResult;
 use regex::Regex;
 use std::process::Stdio;
@@ -82,6 +83,40 @@ fn keep_tail(tail: &mut String) {
 
 /// 只更新远程跟踪分支，不改动工作区和本地分支
 pub async fn run_fetch(cwd: &str, options: RemoteOptions) -> RemoteResult {
+    run_remote(cwd, &["fetch", "--progress"], options, describe_remote_error).await
+}
+
+static DIVERGED: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)Not possible to fast-forward|divergent branches|diverged").unwrap());
+
+/// 拉取失败时的说明；分叉和会覆盖改动这两种最常见，单独说清楚
+pub fn describe_pull_error(output: &str) -> String {
+    if DIVERGED.is_match(output) {
+        return "本地和远程都有新提交，不能快进，没有拉取。请先在编辑器或命令行里合并或变基".into();
+    }
+    if output.contains("would be overwritten") {
+        return "工作区的改动会被拉取的内容覆盖，没有拉取，改动都还在。请先提交或暂存后再拉取".into();
+    }
+    describe_remote_error(output)
+}
+
+/// 拉取当前分支的上游，只做快进：分叉或会覆盖未提交的改动时 git 拒绝，工作区不变
+pub async fn run_pull(cwd: &str, options: RemoteOptions) -> RemoteResult {
+    let status = match run_git(cwd, &["status", "--porcelain=v2", "--branch", "-z", "--untracked-files=no"]).await {
+        Ok(output) => parse_status(&output),
+        Err(error) => return RemoteResult::failed(error.message),
+    };
+    let Some(branch) = status.branch else {
+        return RemoteResult::failed("当前处于游离 HEAD，没有可以拉取的分支");
+    };
+    if status.upstream.is_none() {
+        return RemoteResult::failed(format!("分支 {branch} 没有设置上游分支，不知道从哪里拉取"));
+    }
+    // 显式指定 --no-rebase，不受 pull.rebase 配置影响；--ff-only 保证不会产生合并提交
+    run_remote(cwd, &["pull", "--no-rebase", "--ff-only", "--progress"], options, describe_pull_error).await
+}
+
+async fn run_remote(cwd: &str, args: &[&str], options: RemoteOptions, describe: fn(&str) -> String) -> RemoteResult {
     if options.cancel.is_cancelled() {
         return RemoteResult::cancelled();
     }
@@ -97,7 +132,7 @@ pub async fn run_fetch(cwd: &str, options: RemoteOptions) -> RemoteResult {
 
     let env: &[(&str, &str)] = if options.non_interactive { &[("GCM_INTERACTIVE", "never")] } else { &[] };
     let mut command = git_command(cwd, env);
-    command.args(["fetch", "--progress"]).stdout(Stdio::piped()).stderr(Stdio::piped());
+    command.args(args).stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = match command.spawn() {
         Ok(child) => child,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return RemoteResult::failed("未找到 git"),
@@ -144,7 +179,7 @@ pub async fn run_fetch(cwd: &str, options: RemoteOptions) -> RemoteResult {
             let _ = tokio::time::timeout(DRAIN_TIMEOUT, futures::future::join_all(readers)).await;
             match status {
                 Ok(status) if status.success() => RemoteResult::ok(),
-                Ok(_) => RemoteResult::failed(describe_remote_error(&tail.lock().unwrap())),
+                Ok(_) => RemoteResult::failed(describe(&tail.lock().unwrap())),
                 Err(e) => RemoteResult::failed(e.to_string()),
             }
         }
@@ -200,6 +235,66 @@ mod tests {
         let main = branches.iter().find(|b| b.name == "main").unwrap();
         assert_eq!(main.behind, 1);
         assert_eq!(std::fs::read_to_string(clone.join("a.txt")).unwrap(), "1");
+    }
+
+    /// 上游仓库提交一次后克隆，再在上游提交一次：克隆落后 1 个提交
+    fn behind_clone(root: &Path) -> (std::path::PathBuf, std::path::PathBuf) {
+        let upstream = root.join("upstream");
+        std::fs::create_dir(&upstream).unwrap();
+        init(&upstream);
+        commit_file(&upstream, "a.txt", "1", "one");
+        let clone = root.join("clone");
+        git(root, &["clone", "-q", &s(&upstream), &s(&clone)]);
+        commit_file(&upstream, "a.txt", "2", "two");
+        (upstream, clone)
+    }
+
+    #[tokio::test]
+    async fn pull_fast_forwards_and_keeps_unrelated_changes() {
+        let root = tempfile::tempdir().unwrap();
+        let (_upstream, clone) = behind_clone(root.path());
+        std::fs::write(clone.join("notes.txt"), "wip").unwrap();
+        let result = run_pull(&s(&clone), RemoteOptions::default()).await;
+        assert!(result.ok, "{}", result.message);
+        assert_eq!(std::fs::read_to_string(clone.join("a.txt")).unwrap(), "2");
+        assert_eq!(std::fs::read_to_string(clone.join("notes.txt")).unwrap(), "wip");
+        let main = list_branches(&s(&clone)).await.unwrap().into_iter().find(|b| b.name == "main").unwrap();
+        assert_eq!((main.ahead, main.behind), (0, 0));
+    }
+
+    #[tokio::test]
+    async fn pull_refuses_diverged_history_without_merging() {
+        let root = tempfile::tempdir().unwrap();
+        let (_upstream, clone) = behind_clone(root.path());
+        commit_file(&clone, "b.txt", "local", "local work");
+        let head = git(&clone, &["rev-parse", "HEAD"]);
+        let result = run_pull(&s(&clone), RemoteOptions::default()).await;
+        assert!(!result.ok);
+        assert!(result.message.contains("不能快进"), "{}", result.message);
+        assert_eq!(git(&clone, &["rev-parse", "HEAD"]), head);
+    }
+
+    #[tokio::test]
+    async fn pull_refuses_to_overwrite_local_changes() {
+        let root = tempfile::tempdir().unwrap();
+        let (_upstream, clone) = behind_clone(root.path());
+        std::fs::write(clone.join("a.txt"), "dirty").unwrap();
+        let result = run_pull(&s(&clone), RemoteOptions::default()).await;
+        assert!(!result.ok);
+        assert!(result.message.contains("改动都还在"), "{}", result.message);
+        assert_eq!(std::fs::read_to_string(clone.join("a.txt")).unwrap(), "dirty");
+    }
+
+    #[tokio::test]
+    async fn pull_needs_upstream_branch() {
+        let root = tempfile::tempdir().unwrap();
+        let (_upstream, clone) = behind_clone(root.path());
+        git(&clone, &["switch", "-q", "-c", "topic", "--no-track"]);
+        let result = run_pull(&s(&clone), RemoteOptions::default()).await;
+        assert_eq!(result.message, "分支 topic 没有设置上游分支，不知道从哪里拉取");
+        let head = git(&clone, &["rev-parse", "HEAD"]);
+        git(&clone, &["switch", "-q", "--detach", head.trim()]);
+        assert!(run_pull(&s(&clone), RemoteOptions::default()).await.message.contains("游离"));
     }
 
     #[tokio::test]

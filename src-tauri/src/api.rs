@@ -10,7 +10,7 @@ use crate::git_ops::{
 use crate::openers::{open_in_terminal, vscode_url};
 use crate::projects::{map_limit, ProjectService};
 use crate::readme::{read_readme, read_readme_image};
-use crate::remote_ops::{run_fetch, RemoteOptions};
+use crate::remote_ops::{run_fetch, run_pull, RemoteOptions};
 use crate::remotes::remote_web_url;
 use crate::repo_queue::RepoQueue;
 use crate::store::{is_auto_fetch_minutes, is_theme_setting, parse_export, Store};
@@ -585,7 +585,8 @@ async fn dispatch(app: &AppHandle, state: &Arc<AppState>, method: &str, args: Ar
             Ok(Value::Null)
         }
 
-        "fetchRepo" => {
+        // 拉取会改动工作区，但只做快进；会覆盖未提交改动或已分叉时 git 拒绝
+        "fetchRepo" | "pullRepo" => {
             let repo = known(0)?;
             let op_id = args.string(1, "操作标识无效")?;
             if op_id.is_empty() {
@@ -602,7 +603,11 @@ async fn dispatch(app: &AppHandle, state: &Arc<AppState>, method: &str, args: Ar
                 })),
                 ..Default::default()
             };
-            let result = state.queue.run(&repo, run_fetch(&repo, options)).await;
+            let result = if method == "pullRepo" {
+                state.queue.run(&repo, run_pull(&repo, options)).await
+            } else {
+                state.queue.run(&repo, run_fetch(&repo, options)).await
+            };
             state.operations.lock().unwrap().remove(&op_id);
             json(result)
         }

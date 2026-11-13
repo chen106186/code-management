@@ -86,6 +86,8 @@ export interface Api {
   /** 唯一会改动工作区的操作；会覆盖未提交改动时 git 拒绝并报错 */
   switchBranch(path: string, name: string, kind: Branch['kind']): Promise<void>
   fetchRepo(path: string, opId: string): Promise<RemoteResult>
+  /** 拉取当前分支的上游，只做快进；已分叉或会覆盖未提交改动时失败，工作区不变 */
+  pullRepo(path: string, opId: string): Promise<RemoteResult>
   fetchAll(opId: string): Promise<FetchAllItem[]>
   cancelRemote(opId: string): Promise<void>
   /** 监听当前打开的仓库，传 null 停止 */
@@ -152,6 +154,7 @@ export const API_METHODS = [
   'getBranches',
   'switchBranch',
   'fetchRepo',
+  'pullRepo',
   'fetchAll',
   'cancelRemote',
   'watchRepo'
