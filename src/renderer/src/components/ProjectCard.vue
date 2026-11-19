@@ -17,6 +17,7 @@ import {
   GitCommitHorizontal,
   HardDrive,
   Plus,
+  LoaderCircle,
   Star,
   Tag,
   TriangleAlert,
@@ -190,8 +191,11 @@ function removeTag(tag: string): void {
       >
         <Star :size="15" :class="project.favorite ? 'fill-amber-400 text-amber-400' : ''" />
       </button>
+      <span v-if="store.pulling?.paths.includes(project.path)" role="status" class="absolute right-11 top-3 inline-flex h-7 items-center gap-1 rounded-md bg-white px-2 text-xs text-teal-700 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-800 dark:text-teal-300 dark:ring-zinc-700">
+        <LoaderCircle :size="14" class="animate-spin motion-reduce:animate-none" /> {{ store.pulling.current === project.path ? '拉取中' : '等待拉取' }}
+      </span>
       <ProjectActions
-        v-if="!editingRemark"
+        v-else-if="!editingRemark"
         :project="project"
         class="absolute right-11 top-3"
         @edit-remark="startRemark"

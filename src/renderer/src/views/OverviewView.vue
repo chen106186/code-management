@@ -6,6 +6,7 @@ import {
   ArrowUpDown,
   CalendarDays,
   CircleAlert,
+  CircleCheck,
   CloudDownload,
   FolderMinus,
   FolderPlus,
@@ -239,26 +240,35 @@ onBeforeUnmount(() => {
       </button>
     </div>
 
-    <div
-      v-if="store.fetchSummary"
-      role="status"
-      data-testid="fetch-summary"
-      class="flex shrink-0 items-start gap-2 border-b border-zinc-200 bg-zinc-100 px-4 py-2 dark:border-zinc-700/70 dark:bg-zinc-800"
-    >
-      <div class="min-w-0 flex-1">
-        <p>{{ fetchSummaryText }}</p>
-        <p
-          v-for="item in store.fetchSummary.failed"
-          :key="item.path"
-          class="truncate text-xs text-red-600 dark:text-red-400"
-          :title="item.message"
-        >
-          {{ item.name }}：{{ item.message }}
-        </p>
+    <div v-if="store.pullSummary || store.fetchSummary" class="pointer-events-none fixed bottom-4 right-4 z-30 flex max-h-[70vh] w-[min(24rem,calc(100vw-2rem))] flex-col gap-2 overflow-y-auto" aria-label="操作结果">
+      <div v-if="store.pullSummary" role="status" class="pointer-events-auto rounded-lg border border-zinc-200 bg-white p-3 text-xs shadow-lg dark:border-zinc-700 dark:bg-zinc-800">
+        <div class="flex items-center gap-2">
+          <CircleAlert v-if="store.pullSummary.failed.length" :size="14" class="shrink-0 text-amber-600 dark:text-amber-400" />
+          <CircleCheck v-else :size="14" class="shrink-0 text-teal-600 dark:text-teal-400" />
+          <span class="min-w-0 flex-1">拉取：成功 {{ store.pullSummary.succeeded }} 个<span v-if="store.pullSummary.failed.length">，失败 {{ store.pullSummary.failed.length }} 个</span><span v-if="store.pullSummary.skipped">，跳过 {{ store.pullSummary.skipped }} 个非 Git 或不存在的项目</span></span>
+          <button class="icon-btn h-6 w-6" title="关闭拉取结果" aria-label="关闭拉取结果" @click="store.pullSummary = null"><X :size="14" /></button>
+        </div>
+        <details v-if="store.pullSummary.failed.length" class="mt-1 text-red-700 dark:text-red-400">
+          <summary class="cursor-pointer">查看失败详情</summary>
+          <div class="mt-1 max-h-40 space-y-1 overflow-y-auto">
+            <p v-for="item in store.pullSummary.failed" :key="item.path" class="break-all">{{ item.name }}：{{ item.message }}</p>
+          </div>
+        </details>
       </div>
-      <button class="icon-btn" title="关闭" aria-label="关闭结果" @click="store.fetchSummary = null">
-        <X :size="14" />
-      </button>
+      <div v-if="store.fetchSummary" role="status" data-testid="fetch-summary" class="pointer-events-auto rounded-lg border border-zinc-200 bg-white p-3 text-xs shadow-lg dark:border-zinc-700 dark:bg-zinc-800">
+        <div class="flex items-center gap-2">
+          <CircleAlert v-if="store.fetchSummary.failed.length" :size="14" class="shrink-0 text-amber-600 dark:text-amber-400" />
+          <CircleCheck v-else :size="14" class="shrink-0 text-teal-600 dark:text-teal-400" />
+          <span class="min-w-0 flex-1">{{ fetchSummaryText }}</span>
+          <button class="icon-btn h-6 w-6" title="关闭 Fetch 结果" aria-label="关闭 Fetch 结果" @click="store.fetchSummary = null"><X :size="14" /></button>
+        </div>
+        <details v-if="store.fetchSummary.failed.length" class="mt-1 text-red-700 dark:text-red-400">
+          <summary class="cursor-pointer">查看失败详情</summary>
+          <div class="mt-1 max-h-40 space-y-1 overflow-y-auto">
+            <p v-for="item in store.fetchSummary.failed" :key="item.path" class="break-all">{{ item.name }}：{{ item.message }}</p>
+          </div>
+        </details>
+      </div>
     </div>
 
     <main class="min-h-0 flex-1 overflow-y-auto p-4">

@@ -89,6 +89,8 @@ export const useProjectsStore = defineStore('projects', () => {
   const fetching = ref(false)
   const fetchProgress = ref('')
   const fetchSummary = ref<FetchSummary | null>(null)
+  const pulling = ref<{ paths: string[]; current: string | null } | null>(null)
+  const pullSummary = ref<{ succeeded: number; skipped: number; failed: { path: string; name: string; message: string }[] } | null>(null)
   let fetchOpId: string | null = null
 
   const prefs = loadListPrefs()
@@ -237,7 +239,15 @@ export const useProjectsStore = defineStore('projects', () => {
   }
 
   function selectAllVisible(): void {
-    selected.value = new Set(visible.value.map((p) => p.path))
+    const paths = visible.value.map((p) => p.path)
+    const next = new Set(selected.value)
+    if (paths.every((path) => next.has(path))) {
+      paths.forEach((path) => next.delete(path))
+      selectAnchor = null
+    } else {
+      paths.forEach((path) => next.add(path))
+    }
+    selected.value = next
   }
 
   function clearSelection(): void {
@@ -365,6 +375,31 @@ export const useProjectsStore = defineStore('projects', () => {
     if (fetchOpId) void window.api.cancelRemote(fetchOpId)
   }
 
+  async function pullProjects(paths: string[]): Promise<void> {
+    if (pulling.value) return
+    const selectedProjects = projects.value.filter((project) => paths.includes(project.path))
+    const repos = selectedProjects.filter((project) => project.isGit && !project.missing)
+    const summary = { succeeded: 0, skipped: selectedProjects.length - repos.length, failed: [] as { path: string; name: string; message: string }[] }
+    pullSummary.value = null
+    pulling.value = { paths: repos.map((project) => project.path), current: null }
+    for (const project of repos) {
+      const name = project.remark || project.name
+      pulling.value.current = project.path
+      try {
+        const result = await window.api.pullRepo(project.path, `pull-project-${crypto.randomUUID()}`)
+        if (result.ok) summary.succeeded++
+        else summary.failed.push({ path: project.path, name, message: result.message || '拉取已取消' })
+      } catch (e) {
+        summary.failed.push({ path: project.path, name, message: errorMessage(e) })
+      }
+      pulling.value.paths = pulling.value.paths.filter((path) => path !== project.path)
+    }
+    pulling.value.current = null
+    await refresh()
+    pullSummary.value = summary
+    pulling.value = null
+  }
+
   function find(path: string): Project | undefined {
     return projects.value.find((p) => p.path === path)
   }
@@ -484,6 +519,9 @@ export const useProjectsStore = defineStore('projects', () => {
     fetching,
     fetchProgress,
     fetchSummary,
+    pulling,
+    pullSummary,
+    pullProjects,
     fetchAll,
     cancelFetchAll,
     query,

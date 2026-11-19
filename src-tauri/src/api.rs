@@ -33,6 +33,7 @@ pub const EVENT_REMOTE_PROGRESS: &str = "event:remoteProgress";
 pub const EVENT_REPO_CHANGED: &str = "event:repoChanged";
 pub const EVENT_AUTO_FETCHED: &str = "event:autoFetched";
 pub const EVENT_STATS_UPDATED: &str = "event:statsUpdated";
+pub const EVENT_SCAN_PROGRESS: &str = "event:scanProgress";
 
 const ACTIVITY_CONCURRENCY: usize = 8;
 const FETCH_ALL_CONCURRENCY: usize = 4;

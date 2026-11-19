@@ -18,6 +18,7 @@ import type {
   ProjectStats,
   Readme,
   SavedView,
+  ScanProgress,
   Snapshot,
   ThemeSetting
 } from './types'
@@ -96,6 +97,7 @@ export interface Api {
 
 /** 主进程推送给渲染进程的事件，返回值用于取消订阅 */
 export interface ApiEvents {
+  onScanProgress(listener: (progress: ScanProgress) => void): Promise<() => void>
   onRemoteProgress(listener: (progress: RemoteProgress) => void): () => void
   onRepoChanged(listener: (path: string) => void): () => void
   onAutoFetched(listener: (status: AutoFetchStatus) => void): () => void
@@ -103,6 +105,7 @@ export interface ApiEvents {
 }
 
 export const EVENT_REMOTE_PROGRESS = 'event:remoteProgress'
+export const EVENT_SCAN_PROGRESS = 'event:scanProgress'
 export const EVENT_REPO_CHANGED = 'event:repoChanged'
 export const EVENT_AUTO_FETCHED = 'event:autoFetched'
 export const EVENT_STATS_UPDATED = 'event:statsUpdated'

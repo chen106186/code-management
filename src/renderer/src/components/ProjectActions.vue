@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Code2, EyeOff, FolderOpen, Pencil, Terminal } from 'lucide-vue-next'
+import { ArrowDownToLine, Code2, EyeOff, FolderOpen, Pencil, Terminal } from 'lucide-vue-next'
 import type { Project } from '@shared/types'
 import { useProjectsStore } from '@renderer/stores/projects'
 
@@ -22,6 +22,16 @@ const store = useProjectsStore()
       <Pencil :size="14" />
     </button>
     <template v-if="!project.missing">
+      <button
+        v-if="project.isGit"
+        class="icon-btn"
+        :disabled="!!store.pulling"
+        title="拉取当前分支的上游更新（仅快进）"
+        aria-label="拉取项目代码"
+        @click="store.pullProjects([project.path])"
+      >
+        <ArrowDownToLine :size="15" />
+      </button>
       <button class="icon-btn" title="用 VS Code 打开" aria-label="用 VS Code 打开" @click="store.openInEditor(project.path)">
         <Code2 :size="15" />
       </button>

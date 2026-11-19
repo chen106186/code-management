@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { Archive, ArrowDown, ArrowUp, CircleAlert, CircleCheck, FilePen, Folder, Star } from 'lucide-vue-next'
+import { Archive, ArrowDown, ArrowUp, CircleAlert, CircleCheck, FilePen, Folder, LoaderCircle, Star } from 'lucide-vue-next'
 import type { Project } from '@shared/types'
 import BranchSwitcher from '@renderer/components/BranchSwitcher.vue'
 import ProjectActions from '@renderer/components/ProjectActions.vue'
@@ -221,8 +221,11 @@ function openRepo(): void {
       </span>
     </template>
 
+    <span v-if="store.pulling?.paths.includes(project.path)" role="status" class="absolute right-2 top-1/2 inline-flex -translate-y-1/2 items-center gap-1 rounded-md bg-white px-2 py-1 text-teal-700 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-800 dark:text-teal-300 dark:ring-zinc-700">
+      <LoaderCircle :size="14" class="animate-spin motion-reduce:animate-none" /> {{ store.pulling.current === project.path ? '拉取中' : '等待拉取' }}
+    </span>
     <ProjectActions
-      v-if="!editingRemark"
+      v-else-if="!editingRemark"
       :project="project"
       class="absolute right-2 top-1/2 -translate-y-1/2"
       @edit-remark="startRemark"

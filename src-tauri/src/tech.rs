@@ -16,7 +16,8 @@ const NODE_TECH: [(&str, &str); 10] = [
 
 type Matcher = fn(&str) -> bool;
 
-const FILE_TECH: [(Matcher, &str); 6] = [
+const FILE_TECH: [(Matcher, &str); 7] = [
+    (|n| n.ends_with(".xcodeproj") || n.ends_with(".xcworkspace") || n.ends_with(".swift"), "Swift"),
     (|n| n == "pyproject.toml" || n == "requirements.txt" || n.ends_with(".py"), "Python"),
     (|n| n == "go.mod", "Go"),
     (|n| n == "Cargo.toml", "Rust"),
@@ -78,6 +79,8 @@ mod tests {
 
     #[test]
     fn other_languages_and_static_pages() {
+        assert_eq!(detect_tech(&names(&["AIToy.xcodeproj", ".tmp_create_ios_docs.py"]), None), ["Swift", "Python"]);
+        assert_eq!(detect_tech(&names(&["Package.swift"]), None), ["Swift"]);
         assert_eq!(detect_tech(&names(&["main.py", "go.mod", "Cargo.toml"]), None), ["Python", "Go", "Rust"]);
         assert_eq!(detect_tech(&names(&["App.sln", "build.gradle.kts"]), None), ["Java", ".NET"]);
         assert_eq!(detect_tech(&names(&["index.HTML"]), None), ["HTML/JS"]);

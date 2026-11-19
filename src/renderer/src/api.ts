@@ -1,10 +1,12 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import type { ScanProgress } from '@shared/types'
 import {
   API_METHODS,
   EVENT_AUTO_FETCHED,
   EVENT_REMOTE_PROGRESS,
   EVENT_REPO_CHANGED,
+  EVENT_SCAN_PROGRESS,
   EVENT_STATS_UPDATED,
   type Api,
   type ApiEvents
@@ -38,6 +40,7 @@ function subscribe<T>(event: string, listener: (payload: T) => void): () => void
 }
 
 const events: ApiEvents = {
+  onScanProgress: (listener) => listen<ScanProgress>(EVENT_SCAN_PROGRESS, (event) => listener(event.payload)),
   onRemoteProgress: (listener) => subscribe(EVENT_REMOTE_PROGRESS, listener),
   onRepoChanged: (listener) => subscribe(EVENT_REPO_CHANGED, listener),
   onAutoFetched: (listener) => subscribe(EVENT_AUTO_FETCHED, listener),

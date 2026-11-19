@@ -23,7 +23,10 @@ mod tray;
 mod types;
 mod watcher;
 
-use api::{apply_theme, fetch_all_repos, AppState, EVENT_AUTO_FETCHED, EVENT_REPO_CHANGED, EVENT_STATS_UPDATED};
+use api::{
+    apply_theme, fetch_all_repos, AppState, EVENT_AUTO_FETCHED, EVENT_REPO_CHANGED, EVENT_SCAN_PROGRESS,
+    EVENT_STATS_UPDATED,
+};
 use auto_fetch::AutoFetcher;
 use projects::ProjectService;
 use repo_queue::RepoQueue;
@@ -81,29 +84,6 @@ fn open_external(app: &AppHandle, url: &tauri::Url) {
     }
 }
 
-/// 页面左上角已经有图标和名称，标题栏里不再画一遍；窗口标题保留，任务栏和 Alt+Tab 仍显示名称
-#[cfg(windows)]
-fn hide_caption(window: &tauri::WebviewWindow) {
-    #[repr(C)]
-    struct WtaOptions {
-        flags: u32,
-        mask: u32,
-    }
-    #[link(name = "uxtheme")]
-    extern "system" {
-        fn SetWindowThemeAttribute(hwnd: *mut std::ffi::c_void, attribute: i32, value: *const WtaOptions, size: u32) -> i32;
-    }
-    const WTA_NONCLIENT: i32 = 1;
-    const WTNCA_NODRAWCAPTION: u32 = 0x1;
-    const WTNCA_NODRAWICON: u32 = 0x2;
-    let Ok(hwnd) = window.hwnd() else { return };
-    let options = WtaOptions { flags: WTNCA_NODRAWCAPTION | WTNCA_NODRAWICON, mask: WTNCA_NODRAWCAPTION | WTNCA_NODRAWICON };
-    // 失败时只是标题栏照常显示，不影响使用
-    unsafe {
-        SetWindowThemeAttribute(hwnd.0, WTA_NONCLIENT, &options, std::mem::size_of::<WtaOptions>() as u32);
-    }
-}
-
 fn create_window(app: &AppHandle) -> tauri::Result<()> {
     let navigation_app = app.clone();
     let popup_app = app.clone();
@@ -111,6 +91,7 @@ fn create_window(app: &AppHandle) -> tauri::Result<()> {
         .title("Code Management Tool")
         .inner_size(1240.0, 820.0)
         .min_inner_size(760.0, 520.0)
+        .center()
         // 页面加载完再显示，避免先闪一下空白
         .visible(false)
         .on_page_load(|window, payload| {
@@ -130,8 +111,6 @@ fn create_window(app: &AppHandle) -> tauri::Result<()> {
             tauri::webview::NewWindowResponse::Deny
         })
         .build()?;
-    #[cfg(windows)]
-    hide_caption(&window);
     // 页面加载出错时也要让窗口出来，否则进程留在后台，用户什么也看不到
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_secs(5)).await;
@@ -150,6 +129,10 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         let _ = stats_app.emit(EVENT_STATS_UPDATED, StatsUpdate { path, stats });
     }));
     let projects = Arc::new(ProjectService::new(store.clone(), stats.clone()));
+    let progress_app = handle.clone();
+    projects.set_on_progress(Arc::new(move |progress| {
+        let _ = progress_app.emit(EVENT_SCAN_PROGRESS, progress);
+    }));
     let queue = Arc::new(RepoQueue::default());
 
     // 结果由页面收到事件后刷新；窗口隐藏时页面也在运行，托盘状态会跟着更新

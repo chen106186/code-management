@@ -132,6 +132,12 @@ export interface ScanError {
   message: string
 }
 
+export interface ScanProgress {
+  done: number
+  total: number | null
+  current: string | null
+}
+
 export interface HiddenProject {
   path: string
   name: string

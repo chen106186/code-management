@@ -5,7 +5,8 @@ use crate::scanner::{latest_modified, scan_root, DEFAULT_SCAN_DEPTH};
 use crate::stats::StatsService;
 use crate::store::Store;
 use crate::tech::detect_tech;
-use crate::types::{GitStatus, HiddenProject, Project, ProjectMove, ScanError, Snapshot};
+use crate::types::{GitStatus, HiddenProject, Project, ProjectMove, ScanError, ScanProgress, Snapshot};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use futures::stream::{self, StreamExt};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -106,6 +107,7 @@ pub fn pair_moves(sources: &[(String, String)], targets: &[(String, String)]) ->
 }
 
 pub type SnapshotFn = Arc<dyn Fn(&Snapshot) + Send + Sync>;
+pub type ProgressFn = Arc<dyn Fn(ScanProgress) + Send + Sync>;
 
 pub struct ProjectService {
     store: Arc<Mutex<Store>>,
@@ -116,6 +118,7 @@ pub struct ProjectService {
     moves: Mutex<Vec<ProjectMove>>,
     stats_paths: Mutex<Vec<String>>,
     on_snapshot: Mutex<Option<SnapshotFn>>,
+    on_progress: Mutex<Option<ProgressFn>>,
 }
 
 impl ProjectService {
@@ -127,11 +130,24 @@ impl ProjectService {
             moves: Mutex::default(),
             stats_paths: Mutex::default(),
             on_snapshot: Mutex::default(),
+            on_progress: Mutex::default(),
         }
     }
 
     pub fn set_on_snapshot(&self, callback: SnapshotFn) {
         *self.on_snapshot.lock().unwrap() = Some(callback);
+    }
+
+    /// 刷新过程中的进度，供页面显示加载进度条
+    pub fn set_on_progress(&self, callback: ProgressFn) {
+        *self.on_progress.lock().unwrap() = Some(callback);
+    }
+
+    fn report(&self, progress: ScanProgress) {
+        let callback = self.on_progress.lock().unwrap().clone();
+        if let Some(callback) = callback {
+            callback(progress);
+        }
     }
 
     pub fn recompute_stats(&self) {
@@ -170,6 +186,7 @@ impl ProjectService {
 
     pub async fn snapshot(&self) -> Result<Snapshot, String> {
         let config = self.store.lock().unwrap().config();
+        self.report(ScanProgress { done: 0, total: None, current: None });
         let mut scan_errors = Vec::new();
         // 保持发现的顺序，按不区分大小写的路径去重
         let mut paths: Vec<String> = Vec::new();
@@ -200,7 +217,19 @@ impl ProjectService {
         let hidden: HashSet<String> = config.hidden.iter().map(|p| path_key(p)).collect();
         let visible: Vec<String> = paths.iter().filter(|p| !hidden.contains(&path_key(p))).cloned().collect();
 
-        let inspected = map_limit(visible, CONCURRENCY, inspect_project).await;
+        let total = visible.len();
+        self.report(ScanProgress { done: 0, total: Some(total), current: None });
+        let done = AtomicUsize::new(0);
+        let inspected = map_limit(visible, CONCURRENCY, |path| {
+            let done = &done;
+            async move {
+                let project = inspect_project(path).await;
+                let finished = done.fetch_add(1, Ordering::SeqCst) + 1;
+                self.report(ScanProgress { done: finished, total: Some(total), current: Some(project.name.clone()) });
+                project
+            }
+        })
+        .await;
         let projects: Vec<Project> = {
             let store = self.store.lock().unwrap();
             inspected
@@ -306,9 +335,18 @@ mod tests {
         store.lock().unwrap().add_manual(&s(manual.path())).unwrap();
         store.lock().unwrap().add_manual(&s(&code.path().join("A"))).unwrap();
 
+        let reports = Arc::new(Mutex::new(Vec::new()));
+        let sink = reports.clone();
+        projects.set_on_progress(Arc::new(move |p| sink.lock().unwrap().push(p)));
         let snapshot = projects.snapshot().await.unwrap();
         assert_eq!(snapshot.projects.len(), 3);
-        let a = snapshot.projects.iter().find(|p| p.name == "a").unwrap();
+        let reports = reports.lock().unwrap();
+        assert_eq!(reports[0], ScanProgress { done: 0, total: None, current: None });
+        assert_eq!(reports[1].total, Some(3));
+        assert_eq!(reports.len(), 5);
+        assert_eq!(reports.last().unwrap().done, 3);
+        assert!(reports.last().unwrap().current.is_some());
+        let a =snapshot.projects.iter().find(|p| p.name == "a").unwrap();
         assert_eq!(a.tech, ["Vue"]);
         assert!(a.last_activity.is_some());
 

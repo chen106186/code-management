@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { CheckCheck, EyeOff, Folder, Star, Tag, X } from 'lucide-vue-next'
+import { ArrowDownToLine, CheckCheck, EyeOff, Folder, Star, Tag, X } from 'lucide-vue-next'
 import { flattenCategories } from '@shared/categories'
 import { useProjectsStore } from '@renderer/stores/projects'
 
@@ -37,11 +37,15 @@ function addTag(): void {
     class="flex shrink-0 flex-wrap items-center gap-2 border-b border-teal-200 bg-teal-50 px-4 py-2 dark:border-teal-900 dark:bg-teal-950/40"
   >
     <span class="font-medium tabular-nums" data-testid="batch-count">已选 {{ store.selectedPaths.length }} 个</span>
-    <button class="btn h-7 text-xs" :disabled="allSelected" @click="store.selectAllVisible()">
-      <CheckCheck :size="13" /> 全选当前 {{ store.visible.length }} 个
+    <button class="btn h-7 text-xs" @click="store.selectAllVisible()">
+      <CheckCheck :size="13" /> {{ allSelected ? '取消全选' : `全选当前 ${store.visible.length} 个` }}
     </button>
 
     <span class="mx-1 h-4 w-px bg-teal-200 dark:bg-teal-800" />
+
+    <button class="btn h-7 text-xs" :disabled="!!store.pulling" title="拉取所选 Git 项目的当前分支（仅快进）" @click="store.pullProjects(store.selectedPaths)">
+      <ArrowDownToLine :size="13" /> 批量拉取
+    </button>
 
     <label v-if="categoryOptions.length" class="relative flex items-center">
       <Folder :size="12" class="pointer-events-none absolute left-2 text-zinc-500" />

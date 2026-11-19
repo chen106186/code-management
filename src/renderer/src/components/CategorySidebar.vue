@@ -23,7 +23,6 @@ import {
   type DropPosition
 } from '@shared/categories'
 import SavedViews from '@renderer/components/SavedViews.vue'
-import logo from '@renderer/assets/logo.png'
 import { CATEGORY_DRAG_TYPE, draggedProjects, PROJECT_DRAG_TYPE } from '@renderer/lib/projectDrag'
 import { SCOPE_ALL, SCOPE_HIDDEN, SCOPE_UNCATEGORIZED } from '@renderer/lib/projectList'
 import { useProjectsStore } from '@renderer/stores/projects'
@@ -206,12 +205,7 @@ const rowClass = (scope: string): string =>
     aria-label="项目分类"
     class="flex w-56 shrink-0 flex-col border-r border-zinc-200 bg-zinc-100/70 dark:border-zinc-700/70 dark:bg-zinc-800/70"
   >
-    <header class="flex h-[57px] shrink-0 items-center gap-2 px-3">
-      <img :src="logo" alt="" class="h-6 w-6" />
-      <h1 class="truncate text-sm font-semibold">Code Management Tool</h1>
-    </header>
-
-    <nav class="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+    <nav class="min-h-0 flex-1 overflow-y-auto px-2 pb-3 pt-3">
       <ul class="space-y-px">
         <li>
           <button

@@ -342,6 +342,16 @@ pub struct RemoteProgress {
     pub line: String,
 }
 
+/// 刷新进度；total 为 None 表示还在扫描目录，不知道有多少项目
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanProgress {
+    pub done: usize,
+    pub total: Option<usize>,
+    /// 刚读取完的项目名
+    pub current: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StatsUpdate {
